@@ -3,7 +3,9 @@
 package digest
 
 import (
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,7 +20,10 @@ type Item struct {
 	Count int      // occurrences folded into this one
 	Locs  []string // locations of the folded occurrences
 	Names []string // folded warnings: the distinct names (`a`, `b`, …)
-	Norm  string   // folded warnings: the message with names replaced by …
+	Norm  string   // folded warnings: the message without the names
+	// Missing: the location's file doesn't exist relative to the working
+	// directory (a stale cache, a path relative to another root)
+	Missing bool
 }
 
 // Tests counts test results; -1 means the tool didn't say.
@@ -26,6 +31,8 @@ type Tests struct {
 	Passed, Failed, Skipped int
 	XFailed, Errors         int  // pytest: expected failures, errors outside tests
 	PkgOK, PkgFailed        int  // go test packages
+	PkgNoTests              int  // go test packages without test files
+	XPassed                 int  // pytest: expected to fail but passed
 	Unknown                 bool // go test without -v: only packages are known
 }
 
@@ -71,9 +78,10 @@ type state struct {
 	r     *Report
 	tools map[string]bool
 
-	goRun     string              // go test -v: the test currently running
-	goLogs    map[string][]string // go test -v: log lines per test
-	goPending []*Item             // go failures waiting for their "FAIL pkg" line
+	goRun      string              // go test -v: the test currently running
+	goLogs     map[string][]string // go test -v: log lines per test
+	goPending  []*Item             // go failures waiting for their "FAIL pkg" line
+	goPanicked string              // the test whose panic ended the current package
 }
 
 func (s *state) tool(name string) {
@@ -126,10 +134,10 @@ func Digest(lines []string, exit int) *Report {
 			i++
 		}
 	}
-	r.Errors = fold(r.Errors)
+	r.Errors = foldRepeated(fold(r.Errors))
 	r.Warnings = foldWarnings(r.Warnings)
 	if s.tools["cargo test"] { // cargo prints failures in completion order: make it stable
-		sort.SliceStable(r.Failures, func(i, j int) bool { return r.Failures[i].Title < r.Failures[j].Title })
+		sort.SliceStable(r.Failures, func(i, j int) bool { return naturalLess(r.Failures[i].Title, r.Failures[j].Title) })
 	}
 	dropParentFailures(r)
 	for _, group := range [][]*Item{r.Errors, r.Failures, r.Warnings} {
@@ -191,9 +199,30 @@ func dropParentFailures(r *Report) {
 // are shown relative to it.
 var Relative string
 
+// CheckFiles makes tidy look up each location's file (off in tests, whose
+// fixtures come from elsewhere).
+var CheckFiles bool
+
+var locSuffixRe = regexp.MustCompile(`(:\d+){1,2}$`)
+
+// missing reports whether loc names a file that doesn't exist from here.
+func missing(loc string) bool {
+	file := locSuffixRe.ReplaceAllString(loc, "")
+	if !CheckFiles || file == loc || file == "" || strings.ContainsAny(file[:1], "<[") ||
+		strings.Contains(file, "://") || !strings.Contains(file, ".") {
+		return false
+	}
+	if !filepath.IsAbs(file) {
+		file = filepath.Join(Relative, file)
+	}
+	_, err := os.Stat(file)
+	return os.IsNotExist(err)
+}
+
 // tidy shortens locations and drops a body line that only repeats the location.
 func tidy(it *Item) {
 	it.Loc = rel(it.Loc)
+	it.Missing = it.Loc != "" && missing(it.Loc)
 	for i, l := range it.Locs {
 		it.Locs[i] = rel(l)
 	}
@@ -233,6 +262,66 @@ func fold(items []*Item) []*Item {
 	return out
 }
 
+// foldRepeated merges errors that share a message when there are three or
+// more of them: one cause, many places. The first keeps its code frame and
+// the others are listed by location.
+func foldRepeated(items []*Item) []*Item {
+	n := map[string]int{}
+	for _, it := range items {
+		n[it.Kind+"\x00"+it.Title]++
+	}
+	var out []*Item
+	first := map[string]*Item{}
+	for _, it := range items {
+		key := it.Kind + "\x00" + it.Title
+		if n[key] < 3 {
+			out = append(out, it)
+			continue
+		}
+		if f, ok := first[key]; ok {
+			f.Count += it.Count
+			if it.Loc != "" {
+				f.Locs = append(f.Locs, it.Loc)
+			}
+			continue
+		}
+		first[key] = it
+		out = append(out, it)
+	}
+	return out
+}
+
+// naturalLess orders "case_2" before "case_10".
+func naturalLess(a, b string) bool {
+	for a != "" && b != "" {
+		da, db := digitsPrefix(a), digitsPrefix(b)
+		if da != "" && db != "" {
+			ta, tb := strings.TrimLeft(da, "0"), strings.TrimLeft(db, "0")
+			if len(ta) != len(tb) {
+				return len(ta) < len(tb)
+			}
+			if ta != tb {
+				return ta < tb
+			}
+			a, b = a[len(da):], b[len(db):]
+			continue
+		}
+		if a[0] != b[0] {
+			return a[0] < b[0]
+		}
+		a, b = a[1:], b[1:]
+	}
+	return len(a) < len(b)
+}
+
+func digitsPrefix(s string) string {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return s[:i]
+}
+
 // foldWarnings merges warnings of the same kind ("unused variable") and
 // keeps every name and location, so nothing is attributed to the wrong one.
 func foldWarnings(items []*Item) []*Item {
@@ -251,7 +340,7 @@ func foldWarnings(items []*Item) []*Item {
 			}
 			continue
 		}
-		it.Count, it.Norm = 1, norm
+		it.Count, it.Norm = 1, withoutNames(it.Title)
 		if name != "" {
 			it.Names = []string{name}
 		}
@@ -264,6 +353,15 @@ func foldWarnings(items []*Item) []*Item {
 		}
 	}
 	return out
+}
+
+// withoutNames drops the quoted names from a message, for the line that
+// lists them after it: "unused variable [-Wunused-variable] ×2: ‘a’, ‘b’".
+func withoutNames(title string) string {
+	t := strings.Join(strings.Fields(quotedRe.ReplaceAllString(title, "")), " ")
+	t = strings.ReplaceAll(t, "( )", "")
+	t = strings.ReplaceAll(t, "()", "")
+	return strings.TrimRight(strings.Join(strings.Fields(t), " "), " :,")
 }
 
 // quoted names in messages: `x`, 'x', ‘x’, »x«, "x"

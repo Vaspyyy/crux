@@ -19,7 +19,7 @@ func TestBudgetLimitsTheReport(t *testing.T) {
 	if n := strings.Count(out, "\n"); n > 34 {
 		t.Errorf("report has %d lines, budget 30:\n%s", n, out)
 	}
-	if !strings.Contains(out, "17 more errors not shown") {
+	if !strings.Contains(out, "19 more errors not shown") || !strings.Contains(out, "problem 0\n      frame") {
 		t.Errorf("no note about hidden items:\n%s", out)
 	}
 }
@@ -93,4 +93,59 @@ func TestLongLinesAreClipped(t *testing.T) {
 	if len(out) > 1000 || !strings.Contains(out, "…[+") {
 		t.Errorf("report is %d bytes", len(out))
 	}
+}
+
+func TestSecondRoundRendering(t *testing.T) {
+	run := func(lines []string, exit int, o Options) string {
+		return Report(Run{Argv: []string{"x"}, Exit: exit, Lines: lines, LogPath: "/l.log"}, digest.Digest(lines, exit), o)
+	}
+	t.Run("short passing test runs get a tests line", func(t *testing.T) {
+		out := run([]string{"==== 3 passed in 0.01s ===="}, 0, Options{Budget: 60})
+		if !strings.Contains(out, "tests: 3 passed") {
+			t.Errorf("got:\n%s", out)
+		}
+	})
+	t.Run("only collection errors", func(t *testing.T) {
+		out := run([]string{"==== 1 error in 0.01s ===="}, 2, Options{Budget: 60})
+		if !strings.Contains(out, "tests: no tests ran, 1 error") {
+			t.Errorf("got:\n%s", out)
+		}
+	})
+	t.Run("raw has no log line", func(t *testing.T) {
+		if out := run([]string{"a"}, 0, Options{Budget: 60, Raw: true}); strings.Contains(out, "full log") {
+			t.Errorf("got:\n%s", out)
+		}
+	})
+	t.Run("one warning at a tiny budget", func(t *testing.T) {
+		r := &digest.Report{Structured: true, Meaningful: make([]string, 30),
+			Warnings: []*digest.Item{{Kind: "warning", Title: "unused variable: `x`", Loc: "src/main.rs:1:5", Count: 1}}}
+		for b := 5; b <= 12; b++ {
+			out := Report(Run{Argv: []string{"cargo"}, Lines: make([]string, 30)}, r, Options{Budget: b})
+			if !strings.Contains(out, "src/main.rs:1:5  unused variable") || strings.Contains(out, "not shown") {
+				t.Errorf("budget %d:\n%s", b, out)
+			}
+		}
+	})
+	t.Run("hidden warnings are counted, not kinds", func(t *testing.T) {
+		r := &digest.Report{Structured: true, Meaningful: make([]string, 30)}
+		for i := range 30 {
+			r.Warnings = append(r.Warnings, &digest.Item{Kind: "warning", Title: fmt.Sprintf("w%d", i), Count: 2, Locs: []string{"a:1"}})
+		}
+		out := Report(Run{Argv: []string{"x"}, Lines: make([]string, 30)}, r, Options{Budget: 20})
+		if !strings.Contains(out, "more warnings not shown") || strings.Contains(out, "kinds") {
+			t.Errorf("got:\n%s", out)
+		}
+	})
+	t.Run("clip keeps the location at the end", func(t *testing.T) {
+		got := clip(strings.Repeat("x", 500) + " at f (/src/app.js:12:5)")
+		if !strings.HasSuffix(got, "(/src/app.js:12:5)") || len([]rune(got)) > maxLine+40 {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("multi-line scripts show their first line", func(t *testing.T) {
+		got := Command([]string{"python3", "-c", "import sys\n" + strings.Repeat("print(1)\n", 20)})
+		if got != "python3 -c 'import sys'…" {
+			t.Errorf("got %s", got)
+		}
+	})
 }

@@ -95,16 +95,22 @@ func goTestFailure(s *state, i int) int {
 		}
 		it.Body = append(it.Body, strings.TrimSpace(l))
 	}
-	// a panic right after the test belongs to it, unless it's the timeout panic
+	// a panic right after the test belongs to it, unless it's the timeout panic.
+	// The failure is located at the test's own line, like every other failure;
+	// where it panicked goes into the message.
 	if end < len(s.lines) && goPanicRe.MatchString(s.lines[end]) && !strings.Contains(s.lines[end], "test timed out") {
 		p, next := parseGoPanic(s.lines, end)
 		it.Body = append(it.Body, p.Title)
-		if p.Loc != "" {
-			it.Body = append(it.Body, "at "+p.Loc)
+		if p.Loc != "" && p.Loc != p.testLoc {
+			it.Body = append(it.Body, "panicked at "+p.Loc)
+		}
+		if it.Loc == "" {
+			it.Loc = p.testLoc
 			if it.Loc == "" {
 				it.Loc = p.Loc
 			}
 		}
+		s.goPanicked = name
 		end = next
 	}
 	it.Body = capLines(it.Body, 6)
@@ -113,11 +119,16 @@ func goTestFailure(s *state, i int) int {
 	return end
 }
 
+type goPanicInfo struct {
+	*Item
+	testLoc string // the first frame in a _test.go file
+}
+
 // parseGoPanic reads a panic and its goroutine dump, keeping the first
 // frame in the user's code. A test timeout names the tests that were running.
-func parseGoPanic(lines []string, i int) (*Item, int) {
+func parseGoPanic(lines []string, i int) (goPanicInfo, int) {
 	m := goPanicRe.FindStringSubmatch(lines[i])
-	it := &Item{Kind: "error", Title: "panic: " + m[1]}
+	it := goPanicInfo{Item: &Item{Kind: "error", Title: "panic: " + m[1]}}
 	end := i + 1
 	var running []string
 	for end < len(lines) {
@@ -132,8 +143,13 @@ func parseGoPanic(lines []string, i int) (*Item, int) {
 		default:
 			goto done
 		}
-		if f := goFrameFile.FindStringSubmatch(l); f != nil && it.Loc == "" && !goStdlibPath.MatchString(f[1]) {
-			it.Loc = f[1]
+		if f := goFrameFile.FindStringSubmatch(l); f != nil && !goStdlibPath.MatchString(f[1]) {
+			if it.Loc == "" {
+				it.Loc = f[1]
+			}
+			if it.testLoc == "" && strings.Contains(f[1], "_test.go:") {
+				it.testLoc = f[1]
+			}
 		}
 		end++
 	}
@@ -150,18 +166,27 @@ func goPanic(s *state, i int) int {
 	}
 	s.tool("go")
 	it, end := parseGoPanic(s.lines, i)
-	s.r.Errors = append(s.r.Errors, it)
+	s.r.Errors = append(s.r.Errors, it.Item)
 	return end
 }
 
 // goPackageDone attributes pending failures to the package that just ended,
 // so their locations get the package directory.
 func goPackageDone(s *state, pkg string) {
+	if s.goPanicked != "" {
+		s.r.Notes = append(s.r.Notes, "package "+pkg+": "+s.goPanicked+" panicked, so the tests after it in this package didn't run")
+		s.goPanicked = ""
+	}
 	dir := goPkgDir(pkg)
 	for _, it := range s.goPending {
 		switch {
 		case it.Loc != "" && !strings.Contains(it.Loc, "/") && dir != "":
 			it.Loc = path.Join(dir, it.Loc)
+			for k, b := range it.Body { // the panic site is in the same package
+				if p, ok := strings.CutPrefix(b, "panicked at "); ok && !strings.Contains(p, "/") {
+					it.Body[k] = "panicked at " + path.Join(dir, p)
+				}
+			}
 		case it.Loc == "" && dir != "":
 			it.Loc = dir + "/"
 		case it.Loc == "" || !strings.Contains(it.Loc, "/"):
@@ -189,6 +214,7 @@ func goSummary(s *state, i int) int {
 		}
 		goPackageDone(s, m[1])
 	case goNoTestsRe.MatchString(l):
+		s.r.Tests.PkgNoTests++
 	case goPassRe.MatchString(l):
 		s.tool("go test")
 		s.r.Tests.Passed++

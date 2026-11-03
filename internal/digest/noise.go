@@ -25,7 +25,6 @@ var noiseRes = []*regexp.Regexp{
 	regexp.MustCompile(`^> \S+@\S+ \S+`), // npm run banner
 	// make
 	regexp.MustCompile(`^g?make(\[\d+\])?: (Entering|Leaving) directory`),
-	regexp.MustCompile(`^!{4,} .* !{4,}$`), // pytest "Interrupted: …" banner
 	// separators
 	regexp.MustCompile(`^[=\-_*~#.]{4,}$`),
 }

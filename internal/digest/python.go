@@ -7,18 +7,19 @@ import (
 )
 
 var (
-	pyBannerRe   = regexp.MustCompile(`^=+ (.+?) =+$`)
-	pyBlockRe    = regexp.MustCompile(`^_{3,} (.+?) _{3,}$`)
-	pySepRe      = regexp.MustCompile(`^(_ )+_?$`)
-	pyLocRe      = regexp.MustCompile(`^(\S+\.py):(\d+): ?(\w*)$`)
-	pyShortRe    = regexp.MustCompile(`^(FAILED|ERROR) (\S+)(?: - (.*))?$`)
-	pyFinalRe    = regexp.MustCompile(`^=+ (.+?) in [\d.]+s(?: \([^)]*\))? =+$`)
-	pyCountRe    = regexp.MustCompile(`(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)`)
-	pyProgressRe = regexp.MustCompile(`^(\S+\.py )?[.FEsxX]+\s*\[\s*\d+%\]$|^\S+\.py [.FEsxX]+$`)
-	pyFrameRe    = regexp.MustCompile(`^  File "(.+)", line (\d+), in (.+)$`)
-	pyQuietRe    = regexp.MustCompile(`^(\d+ (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)(, )?)+ in [\d.]+s( \([^)]*\))?$`)
-	pyWarnRe     = regexp.MustCompile(`^\s+(\S+\.py):(\d+): (\w*Warning): (.+)$`)
-	pyEFileRe    = regexp.MustCompile(`File "(.+?)", line (\d+)`)
+	pyBannerRe    = regexp.MustCompile(`^=+ (.+?) =+$`)
+	pyBlockRe     = regexp.MustCompile(`^_{3,} (.+?) _{3,}$`)
+	pySepRe       = regexp.MustCompile(`^(_ )+_?$`)
+	pyLocRe       = regexp.MustCompile(`^(\S+\.py):(\d+):(?: in .+| ?\w*)$`)
+	pyInterruptRe = regexp.MustCompile(`^!+ Interrupted: (.+?) !+$`)
+	pyShortRe     = regexp.MustCompile(`^(FAILED|ERROR) (\S+)(?: - (.*))?$`)
+	pyFinalRe     = regexp.MustCompile(`^=+ (.+?) in [\d.]+s(?: \([^)]*\))? =+$`)
+	pyCountRe     = regexp.MustCompile(`(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)`)
+	pyProgressRe  = regexp.MustCompile(`^(\S+\.py )?[.FEsxX]+\s*\[\s*\d+%\]$|^\S+\.py [.FEsxX]+$`)
+	pyFrameRe     = regexp.MustCompile(`^  File "(.+)", line (\d+), in (.+)$`)
+	pyQuietRe     = regexp.MustCompile(`^(\d+ (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)(, )?)+ in [\d.]+s( \([^)]*\))?$`)
+	pyWarnRe      = regexp.MustCompile(`^\s+(\S+\.py):(\d+): (\w*Warning): (.+)$`)
+	pyEFileRe     = regexp.MustCompile(`File "(.+?)", line (\d+)`)
 )
 
 // pytestSections handles the FAILURES / ERRORS sections and the header.
@@ -68,7 +69,7 @@ func pytestSections(s *state, i int) int {
 						raised = f[1] + ":" + f[2]
 					}
 				default:
-					if loc := pyLocRe.FindStringSubmatch(t); loc != nil {
+					if loc := pyLocRe.FindStringSubmatch(t); loc != nil && !pyLibPath(loc[1]) {
 						if it.Loc == "" {
 							it.Loc = loc[1] + ":" + loc[2]
 						} else {
@@ -143,11 +144,22 @@ func pytestSections(s *state, i int) int {
 	return 0
 }
 
+// pyLibPath is code that isn't the project's: pytest's own frames, the
+// standard library, installed packages.
+func pyLibPath(p string) bool {
+	return strings.Contains(p, "site-packages/") || strings.Contains(p, "/lib/python") || strings.HasPrefix(p, "<")
+}
+
 // pytestSummary parses "=== 3 failed, 1 passed in 0.03s ===" and progress lines.
 func pytestSummary(s *state, i int) int {
 	l := s.lines[i]
 	if pyProgressRe.MatchString(l) {
 		s.tool("pytest")
+		return i + 1
+	}
+	if m := pyInterruptRe.FindStringSubmatch(l); m != nil {
+		s.tool("pytest")
+		s.r.Notes = append(s.r.Notes, "pytest stopped early: "+m[1]+", so no tests ran")
 		return i + 1
 	}
 	summary := ""
@@ -163,8 +175,10 @@ func pytestSummary(s *state, i int) int {
 	for _, c := range pyCountRe.FindAllStringSubmatch(summary, -1) {
 		n, _ := strconv.Atoi(c[1])
 		switch c[2] {
-		case "passed", "xpassed":
+		case "passed":
 			s.r.Tests.Passed += n
+		case "xpassed":
+			s.r.Tests.XPassed += n
 		case "failed":
 			s.r.Tests.Failed += n
 		case "error", "errors":

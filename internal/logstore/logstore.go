@@ -43,10 +43,11 @@ func Open(argv []string, cwd string, start time.Time, command string) (*Log, err
 		return nil, err
 	}
 	prune(dir)
-	// a readable name: the command and its first plain words, no flags or paths
+	// a readable name: the command and its plain words, without flags, flag
+	// values or paths ("go-test" for go test -timeout 1s ./...)
 	var words []string
 	for i, w := range argv {
-		if i > 0 && (strings.HasPrefix(w, "-") || strings.ContainsAny(w, "/.")) {
+		if i > 0 && (strings.HasPrefix(w, "-") || strings.ContainsAny(w, "/.0123456789=")) {
 			continue
 		}
 		words = append(words, filepath.Base(w))

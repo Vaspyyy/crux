@@ -4,6 +4,7 @@ package render
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -56,13 +57,25 @@ func (w *report) line(format string, a ...any) {
 	w.lines += strings.Count(s, "\n") + 1
 }
 
-// clip keeps one line of output within maxLine characters.
+var trailingLocRe = regexp.MustCompile(`\(?[^\s(]+:\d+(:\d+)?\)?$`)
+
+// clip keeps one line of output within maxLine characters. A location at
+// the end of the line (a stack frame, "at file:line") survives the cut.
 func clip(s string) string {
 	r := []rune(s)
 	if len(r) <= maxLine {
 		return s
 	}
-	return string(r[:maxLine]) + fmt.Sprintf("…[+%d chars]", len(r)-maxLine)
+	tail := []rune(trailingLocRe.FindString(s))
+	if len(tail) > 120 {
+		tail = nil
+	}
+	keep := maxLine - len(tail)
+	out := string(r[:keep]) + fmt.Sprintf("…[+%d chars]", len(r)-keep-len(tail))
+	if len(tail) > 0 {
+		out += "… " + string(tail)
+	}
+	return out
 }
 
 // Report builds the text for a finished run.
@@ -72,7 +85,7 @@ func Report(run Run, r *digest.Report, o Options) string {
 	ok := run.Exit == 0
 
 	// tiny output says it best itself: verdict line plus the output
-	if !o.Raw && len(r.Meaningful) <= tinyOutput && run.Exit >= 0 && len(run.Lines) <= tinyOutput+4 {
+	if !o.Raw && !r.HasTests && len(r.Meaningful) <= tinyOutput && run.Exit >= 0 && len(run.Lines) <= tinyOutput+4 {
 		w.header(run, ok)
 		for _, l := range r.Meaningful {
 			w.line("  %s", clip(l))
@@ -85,7 +98,6 @@ func Report(run Run, r *digest.Report, o Options) string {
 		for _, l := range run.Lines {
 			w.line("%s", clip(l))
 		}
-		w.footer(run)
 		return w.b.String()
 	}
 	if r.HasTests {
@@ -104,8 +116,11 @@ func Report(run Run, r *digest.Report, o Options) string {
 	budget := max(o.Budget, 10)
 	w.items(r, budget, ok)
 
-	for _, n := range r.Notes {
-		w.line("%s%s%s", c.faint, clip(n), c.reset)
+	if len(r.Notes) > 0 {
+		w.line("\nnotes:")
+		for _, n := range r.Notes {
+			w.line("  %s", clip(n))
+		}
 	}
 	explained := len(r.Errors)+len(r.Failures) > 0 && !r.Generic
 	switch {
@@ -120,7 +135,7 @@ func Report(run Run, r *digest.Report, o Options) string {
 		show := r.Meaningful
 		label := "output:"
 		if len(show) > budget/2 {
-			show, label = lastN(show, 10), fmt.Sprintf("last lines (of %d):", len(r.Meaningful))
+			show, label = lastN(show, 10), fmt.Sprintf("last 10 of %d non-empty lines:", len(r.Meaningful))
 		}
 		if len(show) > 0 {
 			w.line("\n%s%s%s", c.faint, label, c.reset)
@@ -184,15 +199,21 @@ func testCounts(r *digest.Report, c pal) string {
 	switch {
 	case t.Passed > 0:
 		add(t.Passed, "passed", c.green)
+	case failed == 0 && t.Errors > 0 && pkgs == 0:
+		parts = append(parts, c.red+"no tests ran"+c.reset)
 	case failed == 0 && t.Errors == 0 && pkgs == 0:
 		parts = append(parts, c.green+"0 passed"+c.reset)
 	}
 	add(failed, "failed", c.red)
 	add(t.Errors, plural0(t.Errors, "error"), c.red)
+	add(t.XPassed, "xpassed", c.yellow)
 	add(t.Skipped, "skipped", c.yellow)
 	add(t.XFailed, "xfailed", c.yellow)
 	if pkgs > 0 {
 		pk := fmt.Sprintf("%d/%d packages ok", t.PkgOK, pkgs)
+		if t.PkgNoTests > 0 {
+			pk += fmt.Sprintf(", %s without tests", plural(t.PkgNoTests, "package"))
+		}
 		if t.Passed == 0 && failed == 0 {
 			pk += " (use -v for per-test counts)"
 		}
@@ -217,9 +238,29 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 	}
 	room -= sections * 2 // section titles and blank lines
 
-	// 1. one line per error / failure, as many as fit (at least one)
-	shown := min(len(important), max(1, room))
-	room -= shown
+	// 1. one line per error / failure, as many as fit (at least one), keeping
+	// room for the first one's explanation: with 50 failures of one cause,
+	// the cause matters more than the 50th name
+	lines := func(it *digest.Item) int {
+		if len(it.Locs) > 0 {
+			return 2
+		}
+		return 1
+	}
+	reserve := 0
+	if len(important) > 0 {
+		if b := len(important[0].Body); b > 0 && b <= room/2 {
+			reserve = b
+		}
+	}
+	shown := 0
+	for _, it := range important {
+		if shown > 0 && lines(it) > room-reserve {
+			break
+		}
+		room -= lines(it)
+		shown++
+	}
 	// 2. their bodies, in order, while they fit
 	withBody := map[*digest.Item]bool{}
 	for _, it := range important[:shown] {
@@ -228,16 +269,14 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 			room -= len(it.Body)
 		}
 	}
-	// 3. warnings: one or two lines each, with what's left
+	// 3. warnings: one or two lines each, with what's left; at least one
+	// when every error and failure is already listed
 	warnShown := 0
-	if nWarn > 0 && room >= 3 {
+	if nWarn > 0 {
 		room -= 2
 		for _, it := range r.Warnings {
-			need := 1
-			if it.Count > 1 {
-				need = 2
-			}
-			if need > room {
+			need := lines(it)
+			if need > room && (warnShown > 0 || shown < len(important)) {
 				break
 			}
 			room -= need
@@ -254,17 +293,21 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 	}
 
 	emit := func(it *digest.Item, color string) {
+		loc := it.Loc
+		if it.Missing {
+			loc += c.reset + c.faint + " (file not found from here)"
+		}
 		var head string
 		switch {
 		case it.Kind == "fail":
 			head = "  " + c.bold + it.Title + c.reset
 			if it.Loc != "" {
-				head += "  " + c.cyan + it.Loc + c.reset
+				head += "  " + c.cyan + loc + c.reset
 			}
 		default:
 			head = "  "
 			if it.Loc != "" {
-				head += c.cyan + it.Loc + c.reset + "  "
+				head += c.cyan + loc + c.reset + "  "
 			}
 			title := it.Title
 			if it.Count > 1 && it.Norm != "" {
@@ -321,8 +364,8 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 		for _, it := range r.Warnings[:warnShown] {
 			emit(it, c.yellow)
 		}
-		if n := nWarn - warnShown; n > 0 {
-			w.line("  %s… and %d more kinds not shown%s", c.faint, n, c.reset)
+		if n := total(r.Warnings[warnShown:]); n > 0 {
+			w.line("  %s… and %s not shown (full log below)%s", c.faint, plural(n, "more warning"), c.reset)
 		}
 	}
 }
@@ -354,6 +397,9 @@ func Command(argv []string) string {
 	parts := make([]string, len(argv))
 	for i, a := range argv {
 		parts[i] = shellQuote(a)
+		if first, _, multi := strings.Cut(a, "\n"); multi && len(parts[i]) > 60 {
+			parts[i] = shellQuote(first) + "…" // a script passed with -c: its first line names it
+		}
 	}
 	s := strings.Join(parts, " ")
 	if r := []rune(s); len(r) > 160 {

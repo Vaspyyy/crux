@@ -20,7 +20,7 @@ import (
 	"github.com/Vaspyyy/crux/internal/runner"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 const usage = `crux runs a build, test or lint command and shows only what matters.
 
@@ -61,6 +61,7 @@ func run(args []string) int {
 	o := opts{budget: 60}
 	var argv []string
 	// flags only before the command: everything after it belongs to the command
+	args = splitShortFlags(args)
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if !strings.HasPrefix(a, "-") || a == "-" {
@@ -85,7 +86,9 @@ func run(args []string) int {
 				return 1
 			}
 			if other {
-				fmt.Fprintln(os.Stderr, "crux: no run in this directory yet; this is the newest log from anywhere")
+				// never hand a script another directory's log
+				fmt.Fprintf(os.Stderr, "crux: no run in this directory yet (the newest log from anywhere is %s)\n", p)
+				return 1
 			}
 			fmt.Println(p)
 			return 0
@@ -186,6 +189,7 @@ func run(args []string) int {
 	}
 
 	digest.Relative = cwd
+	digest.CheckFiles = true
 	digest.GoModule, digest.GoModuleDir = goModule(cwd)
 	r := digest.Digest(lines, res.Exit)
 	if o.verbose {
@@ -195,6 +199,34 @@ func run(args []string) int {
 		Argv: argv, Exit: res.Exit, Signal: res.Signal, Duration: res.Duration, LogPath: logPath, Lines: lines,
 	}, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw}))
 	return res.Exit
+}
+
+// splitShortFlags turns "-rv" into "-r", "-v" (before the command only).
+func splitShortFlags(args []string) []string {
+	var out []string
+	for i, a := range args {
+		if !strings.HasPrefix(a, "-") || a == "-" || a == "--" {
+			return append(out, args[i:]...)
+		}
+		if strings.HasPrefix(a, "--") || len(a) < 3 || strings.Trim(a[1:], "vrAhb") != "" {
+			out = append(out, a)
+			if a == "-b" || a == "--budget" { // its value isn't the command
+				if i+1 < len(args) {
+					out = append(out, args[i+1])
+					return append(out, splitShortFlags(args[i+2:])...)
+				}
+			}
+			continue
+		}
+		for _, c := range a[1:] {
+			out = append(out, "-"+string(c))
+		}
+		if strings.HasSuffix(a, "b") && i+1 < len(args) {
+			out = append(out, args[i+1])
+			return append(out, splitShortFlags(args[i+2:])...)
+		}
+	}
+	return out
 }
 
 func budgetValue(s string) (int, string) {

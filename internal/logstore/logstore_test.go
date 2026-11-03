@@ -44,3 +44,21 @@ func TestLastIsPerDirectory(t *testing.T) {
 		t.Errorf("Last(/elsewhere) = %s other=%v, want newest with other=true", p, isOther)
 	}
 }
+
+func TestLogNames(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	for argv, want := range map[string]string{
+		"python3 -m pytest":               "-python3-pytest.log",
+		"go test -timeout 1s ./...":       "-go-test.log",
+		"cargo test --lib -- --nocapture": "-cargo-test.log",
+	} {
+		l, err := Open(strings.Fields(argv), "/x", time.Now(), argv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		l.Close(0, 0)
+		if !strings.HasSuffix(l.Path, want) {
+			t.Errorf("%s: %s", argv, l.Path)
+		}
+	}
+}

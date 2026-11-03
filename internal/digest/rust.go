@@ -1,6 +1,7 @@
 package digest
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,7 +38,11 @@ func rustDiag(s *state, i int) int {
 	if loc == "" {
 		// cargo's own lines: "error: could not compile `x` …", "warning: `x` generated 3 warnings"
 		switch {
-		case strings.HasPrefix(msg, "could not compile"), strings.HasPrefix(msg, "test failed, to rerun"),
+		case strings.HasPrefix(msg, "test failed, to rerun"):
+			s.tool("cargo")
+			s.r.Notes = append(s.r.Notes, "cargo stopped at the first failing test target: later targets (integration tests, doctests) didn't run. Add --no-fail-fast to run them all.")
+			return i + 1
+		case strings.HasPrefix(msg, "could not compile"),
 			strings.Contains(msg, "generated ") && strings.Contains(msg, "warning"),
 			strings.HasSuffix(msg, "warnings emitted"), strings.HasSuffix(msg, "warning emitted"):
 			s.tool("cargo")
@@ -101,10 +106,18 @@ func rustTestFailure(s *state, i int) int {
 			it.Body = append(it.Body, strings.TrimRight(l, " "))
 		}
 	}
+	// doctests panic inside a temporary file; the test name has the real place
+	if strings.Contains(it.Loc, "rustdoctest") || strings.Contains(it.Loc, "doctest_bundle") {
+		if d := rustDoctestRe.FindStringSubmatch(it.Title); d != nil {
+			it.Loc = d[1] + ":" + d[2]
+		}
+	}
 	it.Body = capLines(it.Body, 6)
 	s.r.Failures = append(s.r.Failures, it)
 	return end
 }
+
+var rustDoctestRe = regexp.MustCompile(`^(\S+) - .*\(line (\d+)\)$`)
 
 // rustPanic handles a panic outside the test harness (cargo run, a binary).
 func rustPanic(s *state, i int) int {
@@ -160,5 +173,5 @@ func capLines(ls []string, n int) []string {
 	if len(ls) <= n {
 		return ls
 	}
-	return append(ls[:n:n], "…")
+	return append(ls[:n:n], fmt.Sprintf("… +%d more lines", len(ls)-n))
 }

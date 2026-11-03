@@ -70,7 +70,7 @@ func tscError(s *state, i int) int {
 		}
 		end++
 	}
-	it.Body = capLines(it.Body, 4)
+	it.Body = capLines(it.Body, 8) // related information ("'x' is declared here.") comes last
 	addItem(s, it)
 	return end
 }

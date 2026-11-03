@@ -71,7 +71,7 @@ func TestFixtures(t *testing.T) {
 		"rust-test-ok.out": {passed: 1},
 		"go-test.out": {errors: 1, failures: 2, contains: []string{
 			"undefined: undefinedThing @ strs/strs.go:3:38", "TestAdd @ calc_test.go:7",
-			"TestDiv @ /work/go-test/calc/calc.go:4", "integer divide by zero"},
+			"TestDiv @ /work/go-test/calc/calc_test.go:10", "panicked at /work/go-test/calc/calc.go:4", "integer divide by zero"},
 			absent: []string{"testing.tRunner"}},
 		"go-big.out": {failures: 1, passed: 250, contains: []string{
 			"TestBroken @ big_test.go:255", "expected port 8080"}, absent: []string{"checking case"}},
@@ -123,8 +123,8 @@ func TestCleanResolvesCarriageReturns(t *testing.T) {
 // Regressions found by the first round of model reviews.
 func TestReviewRegressions(t *testing.T) {
 	cases := map[string]want{
-		// 12 errors with one message on 12 lines are 12 errors, not "1 error ×12"
-		"rustc-many.out": {errors: 12, contains: []string{"@ many.rs:2:", "@ many.rs:13:"}},
+		// 12 errors with one message: one item ×12 that keeps all 12 locations
+		"rustc-many.out": {errors: 1, contains: []string{"@ many.rs:2:19 ×12", "many.rs:3:19", "many.rs:13:20"}},
 		// pytest -q has no === border around its summary
 		"pytest-q.out": {failures: 1, errors: 1, warnings: 1, passed: 3, failed: 1,
 			contains: []string{"fixture exploded", "DeprecationWarning: old api"}},
@@ -200,4 +200,70 @@ func TestGenericErrorsAreNotCapped(t *testing.T) {
 	if r := Digest(lines, 1); len(r.Errors) != 12 {
 		t.Errorf("got %d errors, want 12", len(r.Errors))
 	}
+}
+
+// Regressions found by the second round of model reviews.
+func TestSecondRoundRegressions(t *testing.T) {
+	t.Run("two different errors are never folded", func(t *testing.T) {
+		r := Digest([]string{"a.c:1:1: error: x", "a.c:2:1: error: x", "a.c:3:1: error: y"}, 1)
+		if len(r.Errors) != 3 {
+			t.Errorf("got %s", dump(r))
+		}
+	})
+	t.Run("folded warning text has no placeholder", func(t *testing.T) {
+		if got := withoutNames("unused variable ‘unused’ [-Wunused-variable]"); got != "unused variable [-Wunused-variable]" {
+			t.Errorf("got %q", got)
+		}
+		if got := withoutNames("unused variable: `x`"); got != "unused variable" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("natural order", func(t *testing.T) {
+		if !naturalLess("tests::case_2", "tests::case_10") || naturalLess("tests::case_10", "tests::case_2") {
+			t.Error("case_2 should sort before case_10")
+		}
+	})
+	t.Run("capped bodies say how much is cut", func(t *testing.T) {
+		got := capLines([]string{"a", "b", "c", "d"}, 2)
+		if got[len(got)-1] != "… +2 more lines" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("missing files are marked", func(t *testing.T) {
+		CheckFiles, Relative = true, t.TempDir()
+		defer func() { CheckFiles, Relative = false, "" }()
+		os.WriteFile(filepath.Join(Relative, "here.py"), nil, 0o644)
+		r := Digest([]string{"here.py:3:1: error: a", "gone.py:4:1: error: b", "[eval]:1:7: error: c"}, 1)
+		var got []bool
+		for _, e := range r.Errors {
+			got = append(got, e.Missing)
+		}
+		if fmt.Sprint(got) != "[false true false]" {
+			t.Errorf("missing = %v", got)
+		}
+	})
+	t.Run("pytest xpassed is not passed", func(t *testing.T) {
+		r := Digest([]string{"==== 2 passed, 1 xpassed in 0.01s ===="}, 0)
+		if r.Tests.Passed != 2 || r.Tests.XPassed != 1 {
+			t.Errorf("tests = %+v", r.Tests)
+		}
+	})
+	t.Run("pytest interrupted", func(t *testing.T) {
+		r := Digest([]string{"!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!"}, 2)
+		if len(r.Notes) != 1 || !strings.Contains(r.Notes[0], "no tests ran") {
+			t.Errorf("notes = %q", r.Notes)
+		}
+	})
+	t.Run("cargo stopped early", func(t *testing.T) {
+		r := Digest([]string{"error: test failed, to rerun pass `--lib`"}, 101)
+		if len(r.Notes) != 1 || !strings.Contains(r.Notes[0], "--no-fail-fast") {
+			t.Errorf("notes = %q", r.Notes)
+		}
+	})
+	t.Run("go packages without tests", func(t *testing.T) {
+		r := Digest([]string{"?   \texample.com/x/cmd\t[no test files]", "ok  \texample.com/x/lib\t0.01s"}, 0)
+		if r.Tests.PkgNoTests != 1 || r.Tests.PkgOK != 1 {
+			t.Errorf("tests = %+v", r.Tests)
+		}
+	})
 }
