@@ -1,0 +1,26 @@
+# example.com/demo/strs [example.com/demo/strs.test]
+strs/strs.go:3:38: undefined: undefinedThing
+--- FAIL: TestAdd (0.00s)
+    calc_test.go:7: Add(2, 2) = 4, want 5
+--- FAIL: TestDiv (0.00s)
+panic: runtime error: integer divide by zero [recovered, repanicked]
+
+goroutine 8 [running]:
+testing.tRunner.func1.2({0x55a700, 0x6cfc90})
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:1974 +0x232
+testing.tRunner.func1()
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:1977 +0x349
+panic({0x55a700?, 0x6cfc90?})
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/runtime/panic.go:860 +0x13a
+example.com/demo/calc.Div(...)
+	/work/go-test/calc/calc.go:4
+example.com/demo/calc.TestDiv(0x172cfe544488?)
+	/work/go-test/calc/calc_test.go:10 +0xa
+testing.tRunner(0x172cfe544488, 0x592d10)
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2036 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2101 +0x4c5
+FAIL	example.com/demo/calc	0.004s
+ok  	example.com/demo/ok	0.002s
+FAIL	example.com/demo/strs [build failed]
+FAIL

@@ -1,0 +1,51 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.0.2, pluggy-1.6.0
+PySide6 6.12.0 -- Qt runtime 6.12.0 -- Qt compiled 6.12.0
+rootdir: /work/py
+plugins: cov-7.1.0, qt-4.5.0, platformdirs-4.13.5
+collected 4 items
+
+test_calc.py .FFF                                                        [100%]
+
+=================================== FAILURES ===================================
+________________________________ test_add_wrong ________________________________
+
+    def test_add_wrong():
+>       assert add(1, 2) == 4
+E       assert 3 == 4
+E        +  where 3 = add(1, 2)
+
+test_calc.py:7: AssertionError
+______________________________ test_load_missing _______________________________
+
+    def test_load_missing():
+>       load("/nonexistent/file.txt")
+
+test_calc.py:10: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = '/nonexistent/file.txt'
+
+    def load(path):
+>       with open(path) as f:
+             ^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent/file.txt'
+
+calc.py:5: FileNotFoundError
+__________________________________ test_dict ___________________________________
+
+    def test_dict():
+>       assert {"a": 1, "b": 2} == {"a": 1, "b": 3}
+E       AssertionError: assert {'a': 1, 'b': 2} == {'a': 1, 'b': 3}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'b': 2} != {'b': 3}
+E         Use -v to get more diff
+
+test_calc.py:13: AssertionError
+=========================== short test summary info ============================
+FAILED test_calc.py::test_add_wrong - assert 3 == 4
+FAILED test_calc.py::test_load_missing - FileNotFoundError: [Errno 2] No such...
+FAILED test_calc.py::test_dict - AssertionError: assert {'a': 1, 'b': 2} == {...
+========================= 3 failed, 1 passed in 0.03s ==========================

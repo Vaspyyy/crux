@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/work/crash.py", line 5, in <module>
+    f("b")
+    ~^^^^^
+  File "/work/crash.py", line 2, in f
+    return g(x)
+  File "/work/crash.py", line 4, in g
+    return {"a": 1}[x]
+           ~~~~~~~~^^^
+KeyError: 'b'

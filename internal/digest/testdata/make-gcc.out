@@ -1,0 +1,28 @@
+gcc -Wall -o app main.c
+main.c: In function ‘helper’:
+main.c:2:25: warning: unused variable ‘unused’ [-Wunused-variable]
+    2 | int helper(int x) { int unused; return x * 2; }
+      |                         ^~~~~~
+main.c: In function ‘main’:
+main.c:4:20: error: passing argument 1 of ‘helper’ makes integer from pointer without a cast [-Wint-conversion]
+    4 |     int y = helper("str");
+      |                    ^~~~~
+      |                    |
+      |                    char *
+main.c:2:16: note: expected ‘int’ but argument is of type ‘char *’
+    2 | int helper(int x) { int unused; return x * 2; }
+      |            ~~~~^
+main.c:5:20: error: ‘z’ undeclared (first use in this function)
+    5 |     printf("%d\n", z);
+      |                    ^
+main.c:5:20: note: each undeclared identifier is reported only once for each function it appears in
+main.c:6:13: error: expected ‘;’ before ‘}’ token
+    6 |     return 0
+      |             ^
+      |             ;
+    7 | }
+      | ~            
+main.c:4:9: warning: unused variable ‘y’ [-Wunused-variable]
+    4 |     int y = helper("str");
+      |         ^
+make: *** [Makefile:2: all] Error 1

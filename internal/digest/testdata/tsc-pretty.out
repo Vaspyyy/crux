@@ -1,0 +1,23 @@
+[96ma.ts[0m:[93m1[0m:[93m7[0m - [91merror[0m[90m TS2322: [0mType 'string' is not assignable to type 'number'.
+
+[7m1[0m const n: number = "five";
+[7m [0m [91m      ~[0m
+
+[96ma.ts[0m:[93m3[0m:[93m7[0m - [91merror[0m[90m TS2345: [0mArgument of type 'number' is not assignable to parameter of type 'string'.
+
+[7m3[0m greet(42);
+[7m [0m [91m      ~~[0m
+
+[96ma.ts[0m:[93m5[0m:[93m7[0m - [91merror[0m[90m TS2741: [0mProperty 'name' is missing in type '{ id: number; }' but required in type 'User'.
+
+[7m5[0m const u: User = { id: 1 };
+[7m [0m [91m      ~[0m
+
+  [96ma.ts[0m:[93m4[0m:[93m30[0m
+    [7m4[0m interface User { id: number; name: string }
+    [7m [0m [96m                             ~~~~[0m
+    'name' is declared here.
+
+
+Found 3 errors in the same file, starting at: a.ts[90m:1[0m
+

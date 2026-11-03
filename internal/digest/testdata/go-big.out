@@ -1,0 +1,756 @@
+=== RUN   TestCase0
+    big_test.go:5: checking case 0
+--- PASS: TestCase0 (0.00s)
+=== RUN   TestCase1
+    big_test.go:6: checking case 1
+--- PASS: TestCase1 (0.00s)
+=== RUN   TestCase2
+    big_test.go:7: checking case 2
+--- PASS: TestCase2 (0.00s)
+=== RUN   TestCase3
+    big_test.go:8: checking case 3
+--- PASS: TestCase3 (0.00s)
+=== RUN   TestCase4
+    big_test.go:9: checking case 4
+--- PASS: TestCase4 (0.00s)
+=== RUN   TestCase5
+    big_test.go:10: checking case 5
+--- PASS: TestCase5 (0.00s)
+=== RUN   TestCase6
+    big_test.go:11: checking case 6
+--- PASS: TestCase6 (0.00s)
+=== RUN   TestCase7
+    big_test.go:12: checking case 7
+--- PASS: TestCase7 (0.00s)
+=== RUN   TestCase8
+    big_test.go:13: checking case 8
+--- PASS: TestCase8 (0.00s)
+=== RUN   TestCase9
+    big_test.go:14: checking case 9
+--- PASS: TestCase9 (0.00s)
+=== RUN   TestCase10
+    big_test.go:15: checking case 10
+--- PASS: TestCase10 (0.00s)
+=== RUN   TestCase11
+    big_test.go:16: checking case 11
+--- PASS: TestCase11 (0.00s)
+=== RUN   TestCase12
+    big_test.go:17: checking case 12
+--- PASS: TestCase12 (0.00s)
+=== RUN   TestCase13
+    big_test.go:18: checking case 13
+--- PASS: TestCase13 (0.00s)
+=== RUN   TestCase14
+    big_test.go:19: checking case 14
+--- PASS: TestCase14 (0.00s)
+=== RUN   TestCase15
+    big_test.go:20: checking case 15
+--- PASS: TestCase15 (0.00s)
+=== RUN   TestCase16
+    big_test.go:21: checking case 16
+--- PASS: TestCase16 (0.00s)
+=== RUN   TestCase17
+    big_test.go:22: checking case 17
+--- PASS: TestCase17 (0.00s)
+=== RUN   TestCase18
+    big_test.go:23: checking case 18
+--- PASS: TestCase18 (0.00s)
+=== RUN   TestCase19
+    big_test.go:24: checking case 19
+--- PASS: TestCase19 (0.00s)
+=== RUN   TestCase20
+    big_test.go:25: checking case 20
+--- PASS: TestCase20 (0.00s)
+=== RUN   TestCase21
+    big_test.go:26: checking case 21
+--- PASS: TestCase21 (0.00s)
+=== RUN   TestCase22
+    big_test.go:27: checking case 22
+--- PASS: TestCase22 (0.00s)
+=== RUN   TestCase23
+    big_test.go:28: checking case 23
+--- PASS: TestCase23 (0.00s)
+=== RUN   TestCase24
+    big_test.go:29: checking case 24
+--- PASS: TestCase24 (0.00s)
+=== RUN   TestCase25
+    big_test.go:30: checking case 25
+--- PASS: TestCase25 (0.00s)
+=== RUN   TestCase26
+    big_test.go:31: checking case 26
+--- PASS: TestCase26 (0.00s)
+=== RUN   TestCase27
+    big_test.go:32: checking case 27
+--- PASS: TestCase27 (0.00s)
+=== RUN   TestCase28
+    big_test.go:33: checking case 28
+--- PASS: TestCase28 (0.00s)
+=== RUN   TestCase29
+    big_test.go:34: checking case 29
+--- PASS: TestCase29 (0.00s)
+=== RUN   TestCase30
+    big_test.go:35: checking case 30
+--- PASS: TestCase30 (0.00s)
+=== RUN   TestCase31
+    big_test.go:36: checking case 31
+--- PASS: TestCase31 (0.00s)
+=== RUN   TestCase32
+    big_test.go:37: checking case 32
+--- PASS: TestCase32 (0.00s)
+=== RUN   TestCase33
+    big_test.go:38: checking case 33
+--- PASS: TestCase33 (0.00s)
+=== RUN   TestCase34
+    big_test.go:39: checking case 34
+--- PASS: TestCase34 (0.00s)
+=== RUN   TestCase35
+    big_test.go:40: checking case 35
+--- PASS: TestCase35 (0.00s)
+=== RUN   TestCase36
+    big_test.go:41: checking case 36
+--- PASS: TestCase36 (0.00s)
+=== RUN   TestCase37
+    big_test.go:42: checking case 37
+--- PASS: TestCase37 (0.00s)
+=== RUN   TestCase38
+    big_test.go:43: checking case 38
+--- PASS: TestCase38 (0.00s)
+=== RUN   TestCase39
+    big_test.go:44: checking case 39
+--- PASS: TestCase39 (0.00s)
+=== RUN   TestCase40
+    big_test.go:45: checking case 40
+--- PASS: TestCase40 (0.00s)
+=== RUN   TestCase41
+    big_test.go:46: checking case 41
+--- PASS: TestCase41 (0.00s)
+=== RUN   TestCase42
+    big_test.go:47: checking case 42
+--- PASS: TestCase42 (0.00s)
+=== RUN   TestCase43
+    big_test.go:48: checking case 43
+--- PASS: TestCase43 (0.00s)
+=== RUN   TestCase44
+    big_test.go:49: checking case 44
+--- PASS: TestCase44 (0.00s)
+=== RUN   TestCase45
+    big_test.go:50: checking case 45
+--- PASS: TestCase45 (0.00s)
+=== RUN   TestCase46
+    big_test.go:51: checking case 46
+--- PASS: TestCase46 (0.00s)
+=== RUN   TestCase47
+    big_test.go:52: checking case 47
+--- PASS: TestCase47 (0.00s)
+=== RUN   TestCase48
+    big_test.go:53: checking case 48
+--- PASS: TestCase48 (0.00s)
+=== RUN   TestCase49
+    big_test.go:54: checking case 49
+--- PASS: TestCase49 (0.00s)
+=== RUN   TestCase50
+    big_test.go:55: checking case 50
+--- PASS: TestCase50 (0.00s)
+=== RUN   TestCase51
+    big_test.go:56: checking case 51
+--- PASS: TestCase51 (0.00s)
+=== RUN   TestCase52
+    big_test.go:57: checking case 52
+--- PASS: TestCase52 (0.00s)
+=== RUN   TestCase53
+    big_test.go:58: checking case 53
+--- PASS: TestCase53 (0.00s)
+=== RUN   TestCase54
+    big_test.go:59: checking case 54
+--- PASS: TestCase54 (0.00s)
+=== RUN   TestCase55
+    big_test.go:60: checking case 55
+--- PASS: TestCase55 (0.00s)
+=== RUN   TestCase56
+    big_test.go:61: checking case 56
+--- PASS: TestCase56 (0.00s)
+=== RUN   TestCase57
+    big_test.go:62: checking case 57
+--- PASS: TestCase57 (0.00s)
+=== RUN   TestCase58
+    big_test.go:63: checking case 58
+--- PASS: TestCase58 (0.00s)
+=== RUN   TestCase59
+    big_test.go:64: checking case 59
+--- PASS: TestCase59 (0.00s)
+=== RUN   TestCase60
+    big_test.go:65: checking case 60
+--- PASS: TestCase60 (0.00s)
+=== RUN   TestCase61
+    big_test.go:66: checking case 61
+--- PASS: TestCase61 (0.00s)
+=== RUN   TestCase62
+    big_test.go:67: checking case 62
+--- PASS: TestCase62 (0.00s)
+=== RUN   TestCase63
+    big_test.go:68: checking case 63
+--- PASS: TestCase63 (0.00s)
+=== RUN   TestCase64
+    big_test.go:69: checking case 64
+--- PASS: TestCase64 (0.00s)
+=== RUN   TestCase65
+    big_test.go:70: checking case 65
+--- PASS: TestCase65 (0.00s)
+=== RUN   TestCase66
+    big_test.go:71: checking case 66
+--- PASS: TestCase66 (0.00s)
+=== RUN   TestCase67
+    big_test.go:72: checking case 67
+--- PASS: TestCase67 (0.00s)
+=== RUN   TestCase68
+    big_test.go:73: checking case 68
+--- PASS: TestCase68 (0.00s)
+=== RUN   TestCase69
+    big_test.go:74: checking case 69
+--- PASS: TestCase69 (0.00s)
+=== RUN   TestCase70
+    big_test.go:75: checking case 70
+--- PASS: TestCase70 (0.00s)
+=== RUN   TestCase71
+    big_test.go:76: checking case 71
+--- PASS: TestCase71 (0.00s)
+=== RUN   TestCase72
+    big_test.go:77: checking case 72
+--- PASS: TestCase72 (0.00s)
+=== RUN   TestCase73
+    big_test.go:78: checking case 73
+--- PASS: TestCase73 (0.00s)
+=== RUN   TestCase74
+    big_test.go:79: checking case 74
+--- PASS: TestCase74 (0.00s)
+=== RUN   TestCase75
+    big_test.go:80: checking case 75
+--- PASS: TestCase75 (0.00s)
+=== RUN   TestCase76
+    big_test.go:81: checking case 76
+--- PASS: TestCase76 (0.00s)
+=== RUN   TestCase77
+    big_test.go:82: checking case 77
+--- PASS: TestCase77 (0.00s)
+=== RUN   TestCase78
+    big_test.go:83: checking case 78
+--- PASS: TestCase78 (0.00s)
+=== RUN   TestCase79
+    big_test.go:84: checking case 79
+--- PASS: TestCase79 (0.00s)
+=== RUN   TestCase80
+    big_test.go:85: checking case 80
+--- PASS: TestCase80 (0.00s)
+=== RUN   TestCase81
+    big_test.go:86: checking case 81
+--- PASS: TestCase81 (0.00s)
+=== RUN   TestCase82
+    big_test.go:87: checking case 82
+--- PASS: TestCase82 (0.00s)
+=== RUN   TestCase83
+    big_test.go:88: checking case 83
+--- PASS: TestCase83 (0.00s)
+=== RUN   TestCase84
+    big_test.go:89: checking case 84
+--- PASS: TestCase84 (0.00s)
+=== RUN   TestCase85
+    big_test.go:90: checking case 85
+--- PASS: TestCase85 (0.00s)
+=== RUN   TestCase86
+    big_test.go:91: checking case 86
+--- PASS: TestCase86 (0.00s)
+=== RUN   TestCase87
+    big_test.go:92: checking case 87
+--- PASS: TestCase87 (0.00s)
+=== RUN   TestCase88
+    big_test.go:93: checking case 88
+--- PASS: TestCase88 (0.00s)
+=== RUN   TestCase89
+    big_test.go:94: checking case 89
+--- PASS: TestCase89 (0.00s)
+=== RUN   TestCase90
+    big_test.go:95: checking case 90
+--- PASS: TestCase90 (0.00s)
+=== RUN   TestCase91
+    big_test.go:96: checking case 91
+--- PASS: TestCase91 (0.00s)
+=== RUN   TestCase92
+    big_test.go:97: checking case 92
+--- PASS: TestCase92 (0.00s)
+=== RUN   TestCase93
+    big_test.go:98: checking case 93
+--- PASS: TestCase93 (0.00s)
+=== RUN   TestCase94
+    big_test.go:99: checking case 94
+--- PASS: TestCase94 (0.00s)
+=== RUN   TestCase95
+    big_test.go:100: checking case 95
+--- PASS: TestCase95 (0.00s)
+=== RUN   TestCase96
+    big_test.go:101: checking case 96
+--- PASS: TestCase96 (0.00s)
+=== RUN   TestCase97
+    big_test.go:102: checking case 97
+--- PASS: TestCase97 (0.00s)
+=== RUN   TestCase98
+    big_test.go:103: checking case 98
+--- PASS: TestCase98 (0.00s)
+=== RUN   TestCase99
+    big_test.go:104: checking case 99
+--- PASS: TestCase99 (0.00s)
+=== RUN   TestCase100
+    big_test.go:105: checking case 100
+--- PASS: TestCase100 (0.00s)
+=== RUN   TestCase101
+    big_test.go:106: checking case 101
+--- PASS: TestCase101 (0.00s)
+=== RUN   TestCase102
+    big_test.go:107: checking case 102
+--- PASS: TestCase102 (0.00s)
+=== RUN   TestCase103
+    big_test.go:108: checking case 103
+--- PASS: TestCase103 (0.00s)
+=== RUN   TestCase104
+    big_test.go:109: checking case 104
+--- PASS: TestCase104 (0.00s)
+=== RUN   TestCase105
+    big_test.go:110: checking case 105
+--- PASS: TestCase105 (0.00s)
+=== RUN   TestCase106
+    big_test.go:111: checking case 106
+--- PASS: TestCase106 (0.00s)
+=== RUN   TestCase107
+    big_test.go:112: checking case 107
+--- PASS: TestCase107 (0.00s)
+=== RUN   TestCase108
+    big_test.go:113: checking case 108
+--- PASS: TestCase108 (0.00s)
+=== RUN   TestCase109
+    big_test.go:114: checking case 109
+--- PASS: TestCase109 (0.00s)
+=== RUN   TestCase110
+    big_test.go:115: checking case 110
+--- PASS: TestCase110 (0.00s)
+=== RUN   TestCase111
+    big_test.go:116: checking case 111
+--- PASS: TestCase111 (0.00s)
+=== RUN   TestCase112
+    big_test.go:117: checking case 112
+--- PASS: TestCase112 (0.00s)
+=== RUN   TestCase113
+    big_test.go:118: checking case 113
+--- PASS: TestCase113 (0.00s)
+=== RUN   TestCase114
+    big_test.go:119: checking case 114
+--- PASS: TestCase114 (0.00s)
+=== RUN   TestCase115
+    big_test.go:120: checking case 115
+--- PASS: TestCase115 (0.00s)
+=== RUN   TestCase116
+    big_test.go:121: checking case 116
+--- PASS: TestCase116 (0.00s)
+=== RUN   TestCase117
+    big_test.go:122: checking case 117
+--- PASS: TestCase117 (0.00s)
+=== RUN   TestCase118
+    big_test.go:123: checking case 118
+--- PASS: TestCase118 (0.00s)
+=== RUN   TestCase119
+    big_test.go:124: checking case 119
+--- PASS: TestCase119 (0.00s)
+=== RUN   TestCase120
+    big_test.go:125: checking case 120
+--- PASS: TestCase120 (0.00s)
+=== RUN   TestCase121
+    big_test.go:126: checking case 121
+--- PASS: TestCase121 (0.00s)
+=== RUN   TestCase122
+    big_test.go:127: checking case 122
+--- PASS: TestCase122 (0.00s)
+=== RUN   TestCase123
+    big_test.go:128: checking case 123
+--- PASS: TestCase123 (0.00s)
+=== RUN   TestCase124
+    big_test.go:129: checking case 124
+--- PASS: TestCase124 (0.00s)
+=== RUN   TestCase125
+    big_test.go:130: checking case 125
+--- PASS: TestCase125 (0.00s)
+=== RUN   TestCase126
+    big_test.go:131: checking case 126
+--- PASS: TestCase126 (0.00s)
+=== RUN   TestCase127
+    big_test.go:132: checking case 127
+--- PASS: TestCase127 (0.00s)
+=== RUN   TestCase128
+    big_test.go:133: checking case 128
+--- PASS: TestCase128 (0.00s)
+=== RUN   TestCase129
+    big_test.go:134: checking case 129
+--- PASS: TestCase129 (0.00s)
+=== RUN   TestCase130
+    big_test.go:135: checking case 130
+--- PASS: TestCase130 (0.00s)
+=== RUN   TestCase131
+    big_test.go:136: checking case 131
+--- PASS: TestCase131 (0.00s)
+=== RUN   TestCase132
+    big_test.go:137: checking case 132
+--- PASS: TestCase132 (0.00s)
+=== RUN   TestCase133
+    big_test.go:138: checking case 133
+--- PASS: TestCase133 (0.00s)
+=== RUN   TestCase134
+    big_test.go:139: checking case 134
+--- PASS: TestCase134 (0.00s)
+=== RUN   TestCase135
+    big_test.go:140: checking case 135
+--- PASS: TestCase135 (0.00s)
+=== RUN   TestCase136
+    big_test.go:141: checking case 136
+--- PASS: TestCase136 (0.00s)
+=== RUN   TestCase137
+    big_test.go:142: checking case 137
+--- PASS: TestCase137 (0.00s)
+=== RUN   TestCase138
+    big_test.go:143: checking case 138
+--- PASS: TestCase138 (0.00s)
+=== RUN   TestCase139
+    big_test.go:144: checking case 139
+--- PASS: TestCase139 (0.00s)
+=== RUN   TestCase140
+    big_test.go:145: checking case 140
+--- PASS: TestCase140 (0.00s)
+=== RUN   TestCase141
+    big_test.go:146: checking case 141
+--- PASS: TestCase141 (0.00s)
+=== RUN   TestCase142
+    big_test.go:147: checking case 142
+--- PASS: TestCase142 (0.00s)
+=== RUN   TestCase143
+    big_test.go:148: checking case 143
+--- PASS: TestCase143 (0.00s)
+=== RUN   TestCase144
+    big_test.go:149: checking case 144
+--- PASS: TestCase144 (0.00s)
+=== RUN   TestCase145
+    big_test.go:150: checking case 145
+--- PASS: TestCase145 (0.00s)
+=== RUN   TestCase146
+    big_test.go:151: checking case 146
+--- PASS: TestCase146 (0.00s)
+=== RUN   TestCase147
+    big_test.go:152: checking case 147
+--- PASS: TestCase147 (0.00s)
+=== RUN   TestCase148
+    big_test.go:153: checking case 148
+--- PASS: TestCase148 (0.00s)
+=== RUN   TestCase149
+    big_test.go:154: checking case 149
+--- PASS: TestCase149 (0.00s)
+=== RUN   TestCase150
+    big_test.go:155: checking case 150
+--- PASS: TestCase150 (0.00s)
+=== RUN   TestCase151
+    big_test.go:156: checking case 151
+--- PASS: TestCase151 (0.00s)
+=== RUN   TestCase152
+    big_test.go:157: checking case 152
+--- PASS: TestCase152 (0.00s)
+=== RUN   TestCase153
+    big_test.go:158: checking case 153
+--- PASS: TestCase153 (0.00s)
+=== RUN   TestCase154
+    big_test.go:159: checking case 154
+--- PASS: TestCase154 (0.00s)
+=== RUN   TestCase155
+    big_test.go:160: checking case 155
+--- PASS: TestCase155 (0.00s)
+=== RUN   TestCase156
+    big_test.go:161: checking case 156
+--- PASS: TestCase156 (0.00s)
+=== RUN   TestCase157
+    big_test.go:162: checking case 157
+--- PASS: TestCase157 (0.00s)
+=== RUN   TestCase158
+    big_test.go:163: checking case 158
+--- PASS: TestCase158 (0.00s)
+=== RUN   TestCase159
+    big_test.go:164: checking case 159
+--- PASS: TestCase159 (0.00s)
+=== RUN   TestCase160
+    big_test.go:165: checking case 160
+--- PASS: TestCase160 (0.00s)
+=== RUN   TestCase161
+    big_test.go:166: checking case 161
+--- PASS: TestCase161 (0.00s)
+=== RUN   TestCase162
+    big_test.go:167: checking case 162
+--- PASS: TestCase162 (0.00s)
+=== RUN   TestCase163
+    big_test.go:168: checking case 163
+--- PASS: TestCase163 (0.00s)
+=== RUN   TestCase164
+    big_test.go:169: checking case 164
+--- PASS: TestCase164 (0.00s)
+=== RUN   TestCase165
+    big_test.go:170: checking case 165
+--- PASS: TestCase165 (0.00s)
+=== RUN   TestCase166
+    big_test.go:171: checking case 166
+--- PASS: TestCase166 (0.00s)
+=== RUN   TestCase167
+    big_test.go:172: checking case 167
+--- PASS: TestCase167 (0.00s)
+=== RUN   TestCase168
+    big_test.go:173: checking case 168
+--- PASS: TestCase168 (0.00s)
+=== RUN   TestCase169
+    big_test.go:174: checking case 169
+--- PASS: TestCase169 (0.00s)
+=== RUN   TestCase170
+    big_test.go:175: checking case 170
+--- PASS: TestCase170 (0.00s)
+=== RUN   TestCase171
+    big_test.go:176: checking case 171
+--- PASS: TestCase171 (0.00s)
+=== RUN   TestCase172
+    big_test.go:177: checking case 172
+--- PASS: TestCase172 (0.00s)
+=== RUN   TestCase173
+    big_test.go:178: checking case 173
+--- PASS: TestCase173 (0.00s)
+=== RUN   TestCase174
+    big_test.go:179: checking case 174
+--- PASS: TestCase174 (0.00s)
+=== RUN   TestCase175
+    big_test.go:180: checking case 175
+--- PASS: TestCase175 (0.00s)
+=== RUN   TestCase176
+    big_test.go:181: checking case 176
+--- PASS: TestCase176 (0.00s)
+=== RUN   TestCase177
+    big_test.go:182: checking case 177
+--- PASS: TestCase177 (0.00s)
+=== RUN   TestCase178
+    big_test.go:183: checking case 178
+--- PASS: TestCase178 (0.00s)
+=== RUN   TestCase179
+    big_test.go:184: checking case 179
+--- PASS: TestCase179 (0.00s)
+=== RUN   TestCase180
+    big_test.go:185: checking case 180
+--- PASS: TestCase180 (0.00s)
+=== RUN   TestCase181
+    big_test.go:186: checking case 181
+--- PASS: TestCase181 (0.00s)
+=== RUN   TestCase182
+    big_test.go:187: checking case 182
+--- PASS: TestCase182 (0.00s)
+=== RUN   TestCase183
+    big_test.go:188: checking case 183
+--- PASS: TestCase183 (0.00s)
+=== RUN   TestCase184
+    big_test.go:189: checking case 184
+--- PASS: TestCase184 (0.00s)
+=== RUN   TestCase185
+    big_test.go:190: checking case 185
+--- PASS: TestCase185 (0.00s)
+=== RUN   TestCase186
+    big_test.go:191: checking case 186
+--- PASS: TestCase186 (0.00s)
+=== RUN   TestCase187
+    big_test.go:192: checking case 187
+--- PASS: TestCase187 (0.00s)
+=== RUN   TestCase188
+    big_test.go:193: checking case 188
+--- PASS: TestCase188 (0.00s)
+=== RUN   TestCase189
+    big_test.go:194: checking case 189
+--- PASS: TestCase189 (0.00s)
+=== RUN   TestCase190
+    big_test.go:195: checking case 190
+--- PASS: TestCase190 (0.00s)
+=== RUN   TestCase191
+    big_test.go:196: checking case 191
+--- PASS: TestCase191 (0.00s)
+=== RUN   TestCase192
+    big_test.go:197: checking case 192
+--- PASS: TestCase192 (0.00s)
+=== RUN   TestCase193
+    big_test.go:198: checking case 193
+--- PASS: TestCase193 (0.00s)
+=== RUN   TestCase194
+    big_test.go:199: checking case 194
+--- PASS: TestCase194 (0.00s)
+=== RUN   TestCase195
+    big_test.go:200: checking case 195
+--- PASS: TestCase195 (0.00s)
+=== RUN   TestCase196
+    big_test.go:201: checking case 196
+--- PASS: TestCase196 (0.00s)
+=== RUN   TestCase197
+    big_test.go:202: checking case 197
+--- PASS: TestCase197 (0.00s)
+=== RUN   TestCase198
+    big_test.go:203: checking case 198
+--- PASS: TestCase198 (0.00s)
+=== RUN   TestCase199
+    big_test.go:204: checking case 199
+--- PASS: TestCase199 (0.00s)
+=== RUN   TestCase200
+    big_test.go:205: checking case 200
+--- PASS: TestCase200 (0.00s)
+=== RUN   TestCase201
+    big_test.go:206: checking case 201
+--- PASS: TestCase201 (0.00s)
+=== RUN   TestCase202
+    big_test.go:207: checking case 202
+--- PASS: TestCase202 (0.00s)
+=== RUN   TestCase203
+    big_test.go:208: checking case 203
+--- PASS: TestCase203 (0.00s)
+=== RUN   TestCase204
+    big_test.go:209: checking case 204
+--- PASS: TestCase204 (0.00s)
+=== RUN   TestCase205
+    big_test.go:210: checking case 205
+--- PASS: TestCase205 (0.00s)
+=== RUN   TestCase206
+    big_test.go:211: checking case 206
+--- PASS: TestCase206 (0.00s)
+=== RUN   TestCase207
+    big_test.go:212: checking case 207
+--- PASS: TestCase207 (0.00s)
+=== RUN   TestCase208
+    big_test.go:213: checking case 208
+--- PASS: TestCase208 (0.00s)
+=== RUN   TestCase209
+    big_test.go:214: checking case 209
+--- PASS: TestCase209 (0.00s)
+=== RUN   TestCase210
+    big_test.go:215: checking case 210
+--- PASS: TestCase210 (0.00s)
+=== RUN   TestCase211
+    big_test.go:216: checking case 211
+--- PASS: TestCase211 (0.00s)
+=== RUN   TestCase212
+    big_test.go:217: checking case 212
+--- PASS: TestCase212 (0.00s)
+=== RUN   TestCase213
+    big_test.go:218: checking case 213
+--- PASS: TestCase213 (0.00s)
+=== RUN   TestCase214
+    big_test.go:219: checking case 214
+--- PASS: TestCase214 (0.00s)
+=== RUN   TestCase215
+    big_test.go:220: checking case 215
+--- PASS: TestCase215 (0.00s)
+=== RUN   TestCase216
+    big_test.go:221: checking case 216
+--- PASS: TestCase216 (0.00s)
+=== RUN   TestCase217
+    big_test.go:222: checking case 217
+--- PASS: TestCase217 (0.00s)
+=== RUN   TestCase218
+    big_test.go:223: checking case 218
+--- PASS: TestCase218 (0.00s)
+=== RUN   TestCase219
+    big_test.go:224: checking case 219
+--- PASS: TestCase219 (0.00s)
+=== RUN   TestCase220
+    big_test.go:225: checking case 220
+--- PASS: TestCase220 (0.00s)
+=== RUN   TestCase221
+    big_test.go:226: checking case 221
+--- PASS: TestCase221 (0.00s)
+=== RUN   TestCase222
+    big_test.go:227: checking case 222
+--- PASS: TestCase222 (0.00s)
+=== RUN   TestCase223
+    big_test.go:228: checking case 223
+--- PASS: TestCase223 (0.00s)
+=== RUN   TestCase224
+    big_test.go:229: checking case 224
+--- PASS: TestCase224 (0.00s)
+=== RUN   TestCase225
+    big_test.go:230: checking case 225
+--- PASS: TestCase225 (0.00s)
+=== RUN   TestCase226
+    big_test.go:231: checking case 226
+--- PASS: TestCase226 (0.00s)
+=== RUN   TestCase227
+    big_test.go:232: checking case 227
+--- PASS: TestCase227 (0.00s)
+=== RUN   TestCase228
+    big_test.go:233: checking case 228
+--- PASS: TestCase228 (0.00s)
+=== RUN   TestCase229
+    big_test.go:234: checking case 229
+--- PASS: TestCase229 (0.00s)
+=== RUN   TestCase230
+    big_test.go:235: checking case 230
+--- PASS: TestCase230 (0.00s)
+=== RUN   TestCase231
+    big_test.go:236: checking case 231
+--- PASS: TestCase231 (0.00s)
+=== RUN   TestCase232
+    big_test.go:237: checking case 232
+--- PASS: TestCase232 (0.00s)
+=== RUN   TestCase233
+    big_test.go:238: checking case 233
+--- PASS: TestCase233 (0.00s)
+=== RUN   TestCase234
+    big_test.go:239: checking case 234
+--- PASS: TestCase234 (0.00s)
+=== RUN   TestCase235
+    big_test.go:240: checking case 235
+--- PASS: TestCase235 (0.00s)
+=== RUN   TestCase236
+    big_test.go:241: checking case 236
+--- PASS: TestCase236 (0.00s)
+=== RUN   TestCase237
+    big_test.go:242: checking case 237
+--- PASS: TestCase237 (0.00s)
+=== RUN   TestCase238
+    big_test.go:243: checking case 238
+--- PASS: TestCase238 (0.00s)
+=== RUN   TestCase239
+    big_test.go:244: checking case 239
+--- PASS: TestCase239 (0.00s)
+=== RUN   TestCase240
+    big_test.go:245: checking case 240
+--- PASS: TestCase240 (0.00s)
+=== RUN   TestCase241
+    big_test.go:246: checking case 241
+--- PASS: TestCase241 (0.00s)
+=== RUN   TestCase242
+    big_test.go:247: checking case 242
+--- PASS: TestCase242 (0.00s)
+=== RUN   TestCase243
+    big_test.go:248: checking case 243
+--- PASS: TestCase243 (0.00s)
+=== RUN   TestCase244
+    big_test.go:249: checking case 244
+--- PASS: TestCase244 (0.00s)
+=== RUN   TestCase245
+    big_test.go:250: checking case 245
+--- PASS: TestCase245 (0.00s)
+=== RUN   TestCase246
+    big_test.go:251: checking case 246
+--- PASS: TestCase246 (0.00s)
+=== RUN   TestCase247
+    big_test.go:252: checking case 247
+--- PASS: TestCase247 (0.00s)
+=== RUN   TestCase248
+    big_test.go:253: checking case 248
+--- PASS: TestCase248 (0.00s)
+=== RUN   TestCase249
+    big_test.go:254: checking case 249
+--- PASS: TestCase249 (0.00s)
+=== RUN   TestBroken
+    big_test.go:255: config: expected port 8080, got 0
+--- FAIL: TestBroken (0.00s)
+FAIL
+FAIL	example.com/big	0.005s
+FAIL

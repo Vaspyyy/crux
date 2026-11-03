@@ -1,0 +1,33 @@
+   Compiling rust-build v0.1.0 (/work/rust-build)
+error[E0425]: cannot find value `z` in this scope
+ --> src/main.rs:6:20
+  |
+6 |     println!("{}", z);
+  |                    ^
+  |
+help: a local variable with a similar name exists
+  |
+6 -     println!("{}", z);
+6 +     println!("{}", x);
+  |
+
+error[E0308]: mismatched types
+ --> src/main.rs:4:18
+  |
+4 |     let x: i32 = "hello";
+  |            ---   ^^^^^^^ expected `i32`, found `&str`
+  |            |
+  |            expected due to this
+
+warning: unused variable: `unused`
+ --> src/main.rs:1:32
+  |
+1 | fn helper(a: i32) -> i32 { let unused = 5; a * 2 }
+  |                                ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0308, E0425.
+For more information about an error, try `rustc --explain E0308`.
+warning: `rust-build` (bin "rust-build") generated 1 warning
+error: could not compile `rust-build` (bin "rust-build") due to 2 previous errors; 1 warning emitted
