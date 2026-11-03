@@ -80,7 +80,8 @@ func Report(run Run, r *digest.Report, o Options) string {
 	failed := max(r.Tests.Failed, len(r.Failures))
 	if r.HasTests {
 		var parts []string
-		if r.Tests.Passed > 0 || failed == 0 {
+		pkgs := r.Tests.PkgOK + r.Tests.PkgFailed
+		if r.Tests.Passed > 0 || (failed == 0 && pkgs == 0) { // go test without -v only counts packages
 			parts = append(parts, c.green+strconv.Itoa(r.Tests.Passed)+" passed"+c.reset)
 		}
 		if failed > 0 {
@@ -92,9 +93,6 @@ func Report(run Run, r *digest.Report, o Options) string {
 		if r.Tests.PkgOK+r.Tests.PkgFailed > 0 {
 			pk := fmt.Sprintf("%d/%d packages ok", r.Tests.PkgOK, r.Tests.PkgOK+r.Tests.PkgFailed)
 			parts = append(parts, c.faint+pk+c.reset)
-		}
-		if r.Tests.Passed == 0 && failed > 0 && r.Tests.PkgOK+r.Tests.PkgFailed > 0 {
-			parts = parts[1:] // "0 passed" is just unknown without -v
 		}
 		line("tests: %s", strings.Join(parts, ", "))
 	}
