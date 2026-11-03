@@ -75,6 +75,12 @@ func rustDiag(s *state, i int) int {
 		title = code + ": " + msg
 	}
 	it := &Item{Kind: kind, Title: title, Loc: loc, Body: capLines(body, 8)}
+	for _, l := range body { // the primary label says what differs between errors with one message
+		if d := rustDetailRe.FindStringSubmatch(l); d != nil {
+			it.Detail = d[1]
+			break
+		}
+	}
 	if kind == "error" {
 		s.r.Errors = append(s.r.Errors, it)
 	} else {
@@ -116,6 +122,8 @@ func rustTestFailure(s *state, i int) int {
 	s.r.Failures = append(s.r.Failures, it)
 	return end
 }
+
+var rustDetailRe = regexp.MustCompile(`\^+ (.+)$`)
 
 var rustDoctestRe = regexp.MustCompile(`^(\S+) - .*\(line (\d+)\)$`)
 

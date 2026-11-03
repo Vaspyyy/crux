@@ -1,0 +1,35 @@
+   Compiling rf v0.1.0 (/work/rf)
+error[E0308]: mismatched types
+ --> src/main.rs:2:18
+  |
+2 |     let a: i32 = "x";
+  |            ---   ^^^ expected `i32`, found `&str`
+  |            |
+  |            expected due to this
+
+error[E0308]: mismatched types
+ --> src/main.rs:3:18
+  |
+3 |     let b: i32 = "y";
+  |            ---   ^^^ expected `i32`, found `&str`
+  |            |
+  |            expected due to this
+
+error[E0308]: mismatched types
+ --> src/main.rs:4:19
+  |
+4 |     let d: bool = "w";
+  |            ----   ^^^ expected `bool`, found `&str`
+  |            |
+  |            expected due to this
+
+error[E0308]: mismatched types
+ --> src/main.rs:5:18
+  |
+5 |     let c: i32 = "z";
+  |            ---   ^^^ expected `i32`, found `&str`
+  |            |
+  |            expected due to this
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `rf` (bin "rf") due to 4 previous errors

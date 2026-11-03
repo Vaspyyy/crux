@@ -16,10 +16,10 @@ func TestBudgetLimitsTheReport(t *testing.T) {
 			Body: []string{"  frame", "  ^"}, Count: 1})
 	}
 	out := Report(Run{Argv: []string{"make"}, Exit: 2, Duration: time.Second, Lines: make([]string, 500)}, r, Options{Budget: 30})
-	if n := strings.Count(out, "\n"); n > 34 {
+	if n := strings.Count(out, "\n"); n > 40 { // 30 errors always get a line
 		t.Errorf("report has %d lines, budget 30:\n%s", n, out)
 	}
-	if !strings.Contains(out, "19 more errors not shown") || !strings.Contains(out, "problem 0\n      frame") {
+	if !strings.Contains(out, "10 more errors not shown") || !strings.Contains(out, "problem 0\n      frame") {
 		t.Errorf("no note about hidden items:\n%s", out)
 	}
 }
@@ -77,7 +77,8 @@ func TestCommandIsPasteable(t *testing.T) {
 	for argv, want := range map[string]string{
 		"sh\x00-c\x00exit 7":            `sh -c 'exit 7'`,
 		"echo\x00it's":                  `echo 'it'\''s'`,
-		"echo\x00line1\nOK  fake":       `echo $"line1\nOK  fake"`,
+		"echo\x00line1\nOK  fake":       `echo line1…`,
+		"printf\x00a\tb\x00it's\x1b":    `printf $'a\tb' $'it\'s\x1b'`,
 		"go\x00test\x00./...\x00-run=X": `go test ./... -run=X`,
 	} {
 		if got := Command(strings.Split(argv, "\x00")); got != want {
@@ -164,5 +165,36 @@ func TestLiveCountsOnlyRealDiagnostics(t *testing.T) {
 	}
 	if l.warns != 1 || l.errs != 1 {
 		t.Errorf("warns=%d errs=%d, want 1 and 1", l.warns, l.errs)
+	}
+}
+
+func TestFinalRoundBudget(t *testing.T) {
+	r := &digest.Report{Structured: true, Meaningful: make([]string, 60)}
+	for i := range 12 {
+		r.Errors = append(r.Errors, &digest.Item{Kind: "error", Title: fmt.Sprintf("problem %d", i), Loc: fmt.Sprintf("e.c:%d:1", i+1),
+			Body: []string{"  frame", "  ^"}, Count: 1})
+	}
+	r.Warnings = []*digest.Item{{Kind: "warning", Title: "unused variable 'lone'", Loc: "e.c:2:21", Count: 1}}
+	out := Report(Run{Argv: []string{"gcc"}, Exit: 1, Lines: make([]string, 60)}, r, Options{Budget: 5})
+	if !strings.Contains(out, "problem 11") || !strings.Contains(out, "problem 0\n      frame") {
+		t.Errorf("every error gets a line and the first keeps its frame:\n%s", out)
+	}
+	if strings.Contains(out, "1 more warning") {
+		t.Errorf("a lone warning reported as 'one more':\n%s", out)
+	}
+}
+
+func TestRecognisedTinyOutputIsDigested(t *testing.T) {
+	lines := []string{"a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'."}
+	out := Report(Run{Argv: []string{"tsc"}, Exit: 2, Lines: lines}, digest.Digest(lines, 2), Options{Budget: 60})
+	if !strings.Contains(out, "1 error:\n  a.ts:1:7  TS2322") {
+		t.Errorf("got:\n%s", out)
+	}
+}
+
+func TestRawIsJustTheOutput(t *testing.T) {
+	lines := []string{"a", "b"}
+	if out := Report(Run{Argv: []string{"x"}, Lines: lines}, digest.Digest(lines, 0), Options{Raw: true}); out != "a\nb\n" {
+		t.Errorf("got %q", out)
 	}
 }

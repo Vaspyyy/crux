@@ -7,19 +7,21 @@ import (
 )
 
 var (
-	pyBannerRe    = regexp.MustCompile(`^=+ (.+?) =+$`)
-	pyBlockRe     = regexp.MustCompile(`^_{3,} (.+?) _{3,}$`)
-	pySepRe       = regexp.MustCompile(`^(_ )+_?$`)
-	pyLocRe       = regexp.MustCompile(`^(\S+\.py):(\d+):(?: in .+| ?\w*)$`)
-	pyInterruptRe = regexp.MustCompile(`^!+ Interrupted: (.+?) !+$`)
-	pyShortRe     = regexp.MustCompile(`^(FAILED|ERROR) (\S+)(?: - (.*))?$`)
-	pyFinalRe     = regexp.MustCompile(`^=+ (.+?) in [\d.]+s(?: \([^)]*\))? =+$`)
-	pyCountRe     = regexp.MustCompile(`(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)`)
-	pyProgressRe  = regexp.MustCompile(`^(\S+\.py )?[.FEsxX]+\s*\[\s*\d+%\]$|^\S+\.py [.FEsxX]+$`)
-	pyFrameRe     = regexp.MustCompile(`^  File "(.+)", line (\d+), in (.+)$`)
-	pyQuietRe     = regexp.MustCompile(`^(\d+ (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)(, )?)+ in [\d.]+s( \([^)]*\))?$`)
-	pyWarnRe      = regexp.MustCompile(`^\s+(\S+\.py):(\d+): (\w*Warning): (.+)$`)
-	pyEFileRe     = regexp.MustCompile(`File "(.+?)", line (\d+)`)
+	pyBannerRe   = regexp.MustCompile(`^=+ (.+?) =+$`)
+	pyBlockRe    = regexp.MustCompile(`^_{3,} (.+?) _{3,}$`)
+	pySepRe      = regexp.MustCompile(`^(_ )+_?$`)
+	pyLocRe      = regexp.MustCompile(`^(\S+\.py):(\d+):(?: in .+| ?\w*)$`)
+	pyBangRe     = regexp.MustCompile(`^!{3,} (.+?) !{3,}$`)
+	pyTbLineRe   = regexp.MustCompile(`^(\S+\.py):(\d+): (.+)$`)
+	pyStopRe     = regexp.MustCompile(`^stopping after (\d+) failures?$`)
+	pyShortRe    = regexp.MustCompile(`^(FAILED|ERROR) (\S+)(?: - (.*))?$`)
+	pyFinalRe    = regexp.MustCompile(`^=+ (.+?) in [\d.]+s(?: \([^)]*\))? =+$`)
+	pyCountRe    = regexp.MustCompile(`(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)`)
+	pyProgressRe = regexp.MustCompile(`^(\S+\.py )?[.FEsxX]+\s*\[\s*\d+%\]$|^\S+\.py [.FEsxX]+$`)
+	pyFrameRe    = regexp.MustCompile(`^  File "(.+)", line (\d+), in (.+)$`)
+	pyQuietRe    = regexp.MustCompile(`^(\d+ (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)(, )?)+ in [\d.]+s( \([^)]*\))?$`)
+	pyWarnRe     = regexp.MustCompile(`^\s+(\S+\.py):(\d+): (\w*Warning): (.+)$`)
+	pyEFileRe    = regexp.MustCompile(`File "(.+?)", line (\d+)`)
 )
 
 // pytestSections handles the FAILURES / ERRORS sections and the header.
@@ -43,6 +45,16 @@ func pytestSections(s *state, i int) int {
 	case m[1] == "FAILURES" || m[1] == "ERRORS":
 		s.tool("pytest")
 		end := i + 1
+		if end < len(s.lines) && !pyBlockRe.MatchString(s.lines[end]) {
+			// --tb=line: "E   message" and "file.py:12: message" per failure
+			for end < len(s.lines) && !pyBannerRe.MatchString(s.lines[end]) {
+				if t := pyTbLineRe.FindStringSubmatch(s.lines[end]); t != nil && !pyLibPath(t[1]) {
+					s.pyTbLocs = append(s.pyTbLocs, t[1]+":"+t[2])
+				}
+				end++
+			}
+			return end
+		}
 		for end < len(s.lines) {
 			b := pyBlockRe.FindStringSubmatch(s.lines[end])
 			if b == nil {
@@ -117,10 +129,13 @@ func pytestSections(s *state, i int) int {
 			if sm == nil {
 				break
 			}
-			if !have && sm[1] == "FAILED" { // --tb=no runs only have this list
+			if !have && sm[1] == "FAILED" { // --tb=no/line runs only have this list
 				it := &Item{Kind: "fail", Title: sm[2]}
 				if sm[3] != "" {
 					it.Body = []string{sm[3]}
+				}
+				if k := len(s.r.Failures); k < len(s.pyTbLocs) {
+					it.Loc = s.pyTbLocs[k]
 				}
 				s.r.Failures = append(s.r.Failures, it)
 			}
@@ -157,10 +172,36 @@ func pytestSummary(s *state, i int) int {
 		s.tool("pytest")
 		return i + 1
 	}
-	if m := pyInterruptRe.FindStringSubmatch(l); m != nil {
+	if m := pyBangRe.FindStringSubmatch(l); m != nil && (s.tools["pytest"] || strings.HasPrefix(m[1], "Interrupted: ")) {
+		// pytest's "!!! … !!!" banners: the run stopped before the end
 		s.tool("pytest")
-		s.r.Notes = append(s.r.Notes, "pytest stopped early: "+m[1]+", so no tests ran")
-		return i + 1
+		end := i + 1
+		switch msg := m[1]; {
+		case strings.HasPrefix(msg, "Interrupted: "):
+			s.r.Notes = append(s.r.Notes, "pytest stopped early: "+strings.TrimPrefix(msg, "Interrupted: ")+", so no tests ran")
+		case msg == "KeyboardInterrupt":
+			where := ""
+			if end < len(s.lines) {
+				if t := pyTbLineRe.FindStringSubmatch(s.lines[end]); t != nil {
+					where = " at " + t[1] + ":" + t[2]
+					end++
+				}
+			}
+			if end < len(s.lines) && strings.HasPrefix(s.lines[end], "(to show a full traceback on KeyboardInterrupt") {
+				end++
+			}
+			s.r.Notes = append(s.r.Notes, "pytest was interrupted (KeyboardInterrupt"+where+"), so the remaining tests didn't run")
+		case pyStopRe.MatchString(msg):
+			n := pyStopRe.FindStringSubmatch(msg)[1]
+			word := "failures"
+			if n == "1" {
+				word = "failure"
+			}
+			s.r.Notes = append(s.r.Notes, "pytest stopped after "+n+" "+word+" (-x or --maxfail), so the remaining tests didn't run")
+		default:
+			s.r.Notes = append(s.r.Notes, "pytest: "+msg)
+		}
+		return end
 	}
 	summary := ""
 	if m := pyFinalRe.FindStringSubmatch(l); m != nil {
@@ -172,6 +213,9 @@ func pytestSummary(s *state, i int) int {
 		return 0
 	}
 	s.tool("pytest")
+	if strings.HasPrefix(summary, "no tests ran") {
+		s.r.Tests.NoneRan = true
+	}
 	for _, c := range pyCountRe.FindAllStringSubmatch(summary, -1) {
 		n, _ := strconv.Atoi(c[1])
 		switch c[2] {

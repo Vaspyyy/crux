@@ -22,6 +22,7 @@ var (
 	goGoroutine  = regexp.MustCompile(`^goroutine \d+ \[`)
 	goStdlibPath = regexp.MustCompile(`/(src/(runtime|testing|reflect|sync|internal)/|toolchain@|go/src/)|_testmain\.go`)
 	goRunningRe  = regexp.MustCompile(`^\t\t(\S+) \(`)
+	goTestFuncRe = regexp.MustCompile(`\.((?:Test|Benchmark|Fuzz|Example)[A-Za-z0-9_]*)\b`)
 )
 
 // GoModule and GoModuleDir describe the Go module the command ran in (set
@@ -121,7 +122,8 @@ func goTestFailure(s *state, i int) int {
 
 type goPanicInfo struct {
 	*Item
-	testLoc string // the first frame in a _test.go file
+	testLoc  string // the first frame in a _test.go file
+	testFunc string // the test whose code (or goroutine) panicked
 }
 
 // parseGoPanic reads a panic and its goroutine dump, keeping the first
@@ -142,6 +144,9 @@ func parseGoPanic(lines []string, i int) (goPanicInfo, int) {
 		case strings.HasSuffix(t, ")") || strings.HasSuffix(t, "(...)"): // a function frame
 		default:
 			goto done
+		}
+		if f := goTestFuncRe.FindStringSubmatch(l); f != nil && it.testFunc == "" && !strings.HasPrefix(l, "\t") && !strings.HasPrefix(l, "testing.") {
+			it.testFunc = f[1]
 		}
 		if f := goFrameFile.FindStringSubmatch(l); f != nil && !goStdlibPath.MatchString(f[1]) {
 			if it.Loc == "" {
@@ -166,6 +171,21 @@ func goPanic(s *state, i int) int {
 	}
 	s.tool("go")
 	it, end := parseGoPanic(s.lines, i)
+	if it.testFunc != "" && !strings.Contains(it.Title, "test timed out") {
+		// a panic in a goroutine a test started: no "--- FAIL" line is
+		// printed, but it is that test's failure and it ends the package
+		s.tool("go test")
+		f := &Item{Kind: "fail", Title: it.testFunc, Loc: it.testLoc, Body: []string{it.Title}}
+		if f.Loc == "" {
+			f.Loc = it.Loc
+		} else if it.Loc != "" && it.Loc != it.testLoc {
+			f.Body = append(f.Body, "panicked at "+it.Loc)
+		}
+		s.r.Failures = append(s.r.Failures, f)
+		s.goPending = append(s.goPending, f)
+		s.goPanicked = it.testFunc
+		return end
+	}
 	s.r.Errors = append(s.r.Errors, it.Item)
 	return end
 }
@@ -204,7 +224,12 @@ func goSummary(s *state, i int) int {
 	case goOkRe.MatchString(l):
 		s.tool("go test")
 		s.r.Tests.PkgOK++
-		goPackageDone(s, goOkRe.FindStringSubmatch(l)[1])
+		pkg := goOkRe.FindStringSubmatch(l)[1]
+		if strings.HasSuffix(l, "[no tests to run]") {
+			s.r.Tests.PkgNoRun++
+			s.r.Notes = append(s.r.Notes, "package "+pkg+": no test matched, so nothing ran (check -run)")
+		}
+		goPackageDone(s, pkg)
 	case goPkgFailRe.MatchString(l):
 		s.tool("go test")
 		m := goPkgFailRe.FindStringSubmatch(l)

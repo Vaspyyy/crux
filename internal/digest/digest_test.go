@@ -82,7 +82,7 @@ func TestFixtures(t *testing.T) {
 		"tsc-pretty.out": {errors: 3, contains: []string{"TS2741", "@ a.ts:5:7"}},
 		"make-gcc.out": {errors: 3, warnings: 1, contains: []string{
 			"‘z’ undeclared (first use in this function) @ main.c:5:20", "×2 [main.c:4:9]",
-			"NOTE make: *** [Makefile:2: all] Error 1", "note: expected ‘int’"}},
+			"note: expected ‘int’"}},
 		"javac.out":    {errors: 2, contains: []string{"cannot find symbol @ Main.java:4", "symbol:   method undefined()"}},
 		"py-crash.out": {errors: 1, contains: []string{"KeyError: 'b' @ /work/crash.py:4", "in g: return"}},
 		"node-crash.out": {errors: 1, contains: []string{
@@ -264,6 +264,70 @@ func TestSecondRoundRegressions(t *testing.T) {
 		r := Digest([]string{"?   \texample.com/x/cmd\t[no test files]", "ok  \texample.com/x/lib\t0.01s"}, 0)
 		if r.Tests.PkgNoTests != 1 || r.Tests.PkgOK != 1 {
 			t.Errorf("tests = %+v", r.Tests)
+		}
+	})
+}
+
+// Regressions found by the final review round.
+func TestFinalRoundRegressions(t *testing.T) {
+	cases := map[string]struct {
+		w     want
+		notes []string
+	}{
+		// Ctrl+C is an interruption with a location, not an error called "(to show a full traceback …)"
+		"pytest-kbint.out": {want{passed: 1, absent: []string{"full traceback"}},
+			[]string{"interrupted (KeyboardInterrupt at /work/pk/test_kb.py:2)"}},
+		"pytest-x.out": {want{failures: 1, failed: 1}, []string{"stopped after 1 failure (-x or --maxfail)"}},
+		"pytest-tbline.out": {want{failures: 2, passed: 1, failed: 2,
+			contains: []string{"test_x.py::test_1 @ /work/pk/test_x.py:1", "test_x.py::test_2 @ /work/pk/test_x.py:2"}}, nil},
+		// a panic in a goroutine is the failure of the test that started it, and ends the package
+		"go-goroutine.out": {want{failures: 1, contains: []string{"TestB @ /work/gor/p_test.go:10", "assignment to entry in nil map"}},
+			[]string{"TestB panicked, so the tests after it"}},
+		"go-norun.out": {want{}, []string{"no test matched"}},
+		// one message, different details: the bool mismatch stays separate
+		"rust-fold.out": {want{errors: 2, contains: []string{"@ src/main.rs:2:18 ×3", "expected `bool`, found `&str`"}}, nil},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := Digest(load(t, name), 1)
+			d := dump(r)
+			if len(r.Errors) != c.w.errors || len(r.Failures) != c.w.failures {
+				t.Errorf("errors/failures = %d/%d, want %d/%d\n%s", len(r.Errors), len(r.Failures), c.w.errors, c.w.failures, d)
+			}
+			if r.Tests.Passed != c.w.passed || r.Tests.Failed != c.w.failed {
+				t.Errorf("passed/failed = %d/%d, want %d/%d\n%s", r.Tests.Passed, r.Tests.Failed, c.w.passed, c.w.failed, d)
+			}
+			for _, s := range c.w.contains {
+				if !strings.Contains(d, s) {
+					t.Errorf("missing %q in\n%s", s, d)
+				}
+			}
+			for _, s := range c.w.absent {
+				if strings.Contains(d, s) {
+					t.Errorf("should not contain %q:\n%s", s, d)
+				}
+			}
+			for _, n := range c.notes {
+				if !strings.Contains(d, n) {
+					t.Errorf("missing note %q in\n%s", n, d)
+				}
+			}
+		})
+	}
+	t.Run("zero tests", func(t *testing.T) {
+		if r := Digest(load(t, "pytest-none.out"), 5); !r.HasTests || !r.Tests.NoneRan {
+			t.Errorf("tests = %+v", r.Tests)
+		}
+	})
+	t.Run("paths relative to a parent are resolved", func(t *testing.T) {
+		root := t.TempDir()
+		os.MkdirAll(filepath.Join(root, "src"), 0o755)
+		os.WriteFile(filepath.Join(root, "src", "main.rs"), nil, 0o644)
+		CheckFiles, Relative = true, filepath.Join(root, "src")
+		defer func() { CheckFiles, Relative = false, "" }()
+		r := Digest([]string{"src/main.rs:3:1: error: a"}, 1)
+		if e := r.Errors[0]; e.Loc != "main.rs:3:1" || e.Missing {
+			t.Errorf("loc %q missing=%v", e.Loc, e.Missing)
 		}
 	})
 }

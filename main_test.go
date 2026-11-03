@@ -35,3 +35,9 @@ func fields(s string) []string {
 	}
 	return out
 }
+
+func TestBudgetFlagMustComeLastInAGroup(t *testing.T) {
+	if got := fmt.Sprint(splitShortFlags(fields("-bv 10 echo"))); got != "[-bv 10 echo]" {
+		t.Errorf("got %s", got)
+	}
+}

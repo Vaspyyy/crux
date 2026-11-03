@@ -13,14 +13,15 @@ import (
 
 // Item is one error, warning or failed test.
 type Item struct {
-	Kind  string   // "error", "warning" or "fail"
-	Title string   // the message, or the test name for failures
-	Loc   string   // file:line[:col], if known
-	Body  []string // the few lines that explain it (code frame, assertion, panic message)
-	Count int      // occurrences folded into this one
-	Locs  []string // locations of the folded occurrences
-	Names []string // folded warnings: the distinct names (`a`, `b`, …)
-	Norm  string   // folded warnings: the message without the names
+	Kind   string   // "error", "warning" or "fail"
+	Title  string   // the message, or the test name for failures
+	Loc    string   // file:line[:col], if known
+	Body   []string // the few lines that explain it (code frame, assertion, panic message)
+	Count  int      // occurrences folded into this one
+	Locs   []string // locations of the folded occurrences
+	Names  []string // folded warnings: the distinct names (`a`, `b`, …)
+	Norm   string   // folded warnings: the message without the names
+	Detail string   // what tells two errors with one message apart ("expected `bool`, found `&str`")
 	// Missing: the location's file doesn't exist relative to the working
 	// directory (a stale cache, a path relative to another root)
 	Missing bool
@@ -33,11 +34,13 @@ type Tests struct {
 	PkgOK, PkgFailed        int  // go test packages
 	PkgNoTests              int  // go test packages without test files
 	XPassed                 int  // pytest: expected to fail but passed
+	NoneRan                 bool // the tool said no tests ran
+	PkgNoRun                int  // go test packages where no test matched (-run)
 	Unknown                 bool // go test without -v: only packages are known
 }
 
 func (t *Tests) any() bool {
-	return t.Passed > 0 || t.Failed > 0 || t.Skipped > 0 || t.XFailed > 0 || t.Errors > 0 || t.PkgOK > 0 || t.PkgFailed > 0
+	return t.NoneRan || t.Passed > 0 || t.Failed > 0 || t.Skipped > 0 || t.XFailed > 0 || t.Errors > 0 || t.PkgOK > 0 || t.PkgFailed > 0
 }
 
 // Report is the digest of one command run.
@@ -82,6 +85,8 @@ type state struct {
 	goLogs     map[string][]string // go test -v: log lines per test
 	goPending  []*Item             // go failures waiting for their "FAIL pkg" line
 	goPanicked string              // the test whose panic ended the current package
+	pyTbLocs   []string            // pytest --tb=line: one location per failure, in order
+	roots      []string            // directories make entered: tools' paths may be relative to them
 }
 
 func (s *state) tool(name string) {
@@ -142,8 +147,11 @@ func Digest(lines []string, exit int) *Report {
 	dropParentFailures(r)
 	for _, group := range [][]*Item{r.Errors, r.Failures, r.Warnings} {
 		for _, it := range group {
-			tidy(it)
+			tidy(s, it)
 		}
+	}
+	for i, n := range r.Notes {
+		r.Notes[i] = rel(n)
 	}
 	r.HasTests = r.Tests.any() || len(r.Failures) > 0
 	// leftovers: lines nothing recognised and that aren't known noise
@@ -205,26 +213,50 @@ var CheckFiles bool
 
 var locSuffixRe = regexp.MustCompile(`(:\d+){1,2}$`)
 
-// missing reports whether loc names a file that doesn't exist from here.
-func missing(loc string) bool {
-	file := locSuffixRe.ReplaceAllString(loc, "")
-	if !CheckFiles || file == loc || file == "" || strings.ContainsAny(file[:1], "<[") ||
+// resolve checks that loc's file exists. Tools print paths relative to
+// their own root (cargo: the workspace, make -C: its directory), so a path
+// that isn't found from here is looked up in the directories make entered
+// and in the parent directories, and rewritten to work from here.
+func resolve(loc string, roots []string) (string, bool) {
+	suffix := locSuffixRe.FindString(loc)
+	file := strings.TrimSuffix(loc, suffix)
+	if !CheckFiles || suffix == "" || file == "" || strings.ContainsAny(file[:1], "<[") ||
 		strings.Contains(file, "://") || !strings.Contains(file, ".") {
-		return false
+		return loc, false
 	}
-	if !filepath.IsAbs(file) {
-		file = filepath.Join(Relative, file)
+	if filepath.IsAbs(file) {
+		_, err := os.Stat(file)
+		return loc, os.IsNotExist(err)
 	}
-	_, err := os.Stat(file)
-	return os.IsNotExist(err)
+	if _, err := os.Stat(filepath.Join(Relative, file)); err == nil {
+		return loc, false
+	}
+	cands := append([]string(nil), roots...)
+	for dir, k := filepath.Dir(Relative), 0; k < 8 && dir != filepath.Dir(dir); dir, k = filepath.Dir(dir), k+1 {
+		cands = append(cands, dir)
+	}
+	for _, root := range cands {
+		if _, err := os.Stat(filepath.Join(root, file)); err == nil {
+			if r, err := filepath.Rel(Relative, filepath.Join(root, file)); err == nil {
+				return r + suffix, false
+			}
+		}
+	}
+	return loc, true
 }
 
 // tidy shortens locations and drops a body line that only repeats the location.
-func tidy(it *Item) {
+func tidy(s *state, it *Item) {
 	it.Loc = rel(it.Loc)
-	it.Missing = it.Loc != "" && missing(it.Loc)
+	if it.Loc != "" {
+		it.Loc, it.Missing = resolve(it.Loc, s.roots)
+	}
 	for i, l := range it.Locs {
-		it.Locs[i] = rel(l)
+		if l2, miss := resolve(rel(l), s.roots); miss {
+			it.Locs[i] = l2 + " (not found)"
+		} else {
+			it.Locs[i] = l2
+		}
 	}
 	for i, l := range it.Body {
 		it.Body[i] = rel(l)
@@ -268,12 +300,12 @@ func fold(items []*Item) []*Item {
 func foldRepeated(items []*Item) []*Item {
 	n := map[string]int{}
 	for _, it := range items {
-		n[it.Kind+"\x00"+it.Title]++
+		n[it.Kind+"\x00"+it.Title+"\x00"+it.Detail]++
 	}
 	var out []*Item
 	first := map[string]*Item{}
 	for _, it := range items {
-		key := it.Kind + "\x00" + it.Title
+		key := it.Kind + "\x00" + it.Title + "\x00" + it.Detail
 		if n[key] < 3 {
 			out = append(out, it)
 			continue

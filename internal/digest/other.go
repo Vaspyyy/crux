@@ -22,6 +22,7 @@ var (
 	nodeAtRe     = regexp.MustCompile(`^\s+at (?:.*\()?(.+?:\d+:\d+)\)?$`)
 	nodeHdrRe    = regexp.MustCompile(`^(\S+):(\d+)$`)
 	makeErrRe    = regexp.MustCompile(`^(g?make|ninja)(\[\d+\])?: (\*\*\* .+|build stopped.*)$`)
+	makeEnterRe  = regexp.MustCompile("Entering directory ['‘`](.+?)['’]$")
 	makeDirRe    = regexp.MustCompile(`^g?make(\[\d+\])?: (Entering|Leaving|Nothing to be done)`)
 	npmErrRe     = regexp.MustCompile(`^npm (ERR!|error)( |$)`)
 	npmWarnRe    = regexp.MustCompile(`^npm (WARN|warn) (.*)$`)
@@ -222,11 +223,13 @@ func nodeError(s *state, i int) int {
 func makeError(s *state, i int) int {
 	l := s.lines[i]
 	if makeDirRe.MatchString(l) {
+		if m := makeEnterRe.FindStringSubmatch(l); m != nil {
+			s.roots = append(s.roots, m[1])
+		}
 		return i + 1
 	}
-	if m := makeErrRe.FindStringSubmatch(l); m != nil {
-		s.r.Notes = append(s.r.Notes, m[1]+": "+m[3])
-		return i + 1
+	if makeErrRe.MatchString(l) {
+		return i + 1 // the exit code already says it; "last lines" shows it when nothing else explains the failure
 	}
 	return 0
 }

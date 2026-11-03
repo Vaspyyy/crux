@@ -85,7 +85,7 @@ func Report(run Run, r *digest.Report, o Options) string {
 	ok := run.Exit == 0
 
 	// tiny output says it best itself: verdict line plus the output
-	if !o.Raw && !r.HasTests && len(r.Meaningful) <= tinyOutput && run.Exit >= 0 && len(run.Lines) <= tinyOutput+4 {
+	if !o.Raw && !r.Structured && len(r.Meaningful) <= tinyOutput && run.Exit >= 0 && len(run.Lines) <= tinyOutput+4 {
 		w.header(run, ok)
 		for _, l := range r.Meaningful {
 			w.line("  %s", clip(l))
@@ -93,13 +93,13 @@ func Report(run Run, r *digest.Report, o Options) string {
 		return w.b.String()
 	}
 
-	w.header(run, ok)
-	if o.Raw {
+	if o.Raw { // just the cleaned output; the caller prints Header to stderr
 		for _, l := range run.Lines {
 			w.line("%s", clip(l))
 		}
 		return w.b.String()
 	}
+	w.header(run, ok)
 	if r.HasTests {
 		w.line("tests: %s", testCounts(r, c))
 	}
@@ -122,13 +122,25 @@ func Report(run Run, r *digest.Report, o Options) string {
 			w.line("  %s", clip(n))
 		}
 	}
-	explained := len(r.Errors)+len(r.Failures) > 0 && !r.Generic
+	explained := (len(r.Errors)+len(r.Failures) > 0 && !r.Generic) || len(r.Notes) > 0
 	switch {
 	case !ok && !explained:
 		// nothing structured explains the failure: the end of the output usually does
-		w.line("\n%slast lines:%s", c.faint, c.reset)
-		for _, l := range lastN(r.Tail, max(3, budget-w.lines-3)) {
-			w.line("  %s", clip(l))
+		shownAlready := map[string]bool{}
+		for _, e := range r.Errors {
+			shownAlready[e.Title] = true
+		}
+		var tail []string
+		for _, l := range r.Tail {
+			if !shownAlready[strings.TrimSpace(l)] {
+				tail = append(tail, l)
+			}
+		}
+		if len(tail) > 0 {
+			w.line("\n%slast lines:%s", c.faint, c.reset)
+			for _, l := range lastN(tail, max(3, budget-w.lines-3)) {
+				w.line("  %s", clip(l))
+			}
 		}
 	case ok && !r.HasTests && len(r.Errors)+len(r.Warnings) == 0:
 		// a successful command that isn't a test run: its output may be the point
@@ -153,6 +165,13 @@ func lastN(ls []string, n int) []string {
 		return ls[len(ls)-n:]
 	}
 	return ls
+}
+
+// Header is the verdict line on its own (for --raw, where it goes to stderr).
+func Header(run Run, color bool) string {
+	w := &report{c: palette(color)}
+	w.header(run, run.Exit == 0)
+	return w.b.String()
 }
 
 func (w *report) header(run Run, ok bool) {
@@ -197,10 +216,12 @@ func testCounts(r *digest.Report, c pal) string {
 		}
 	}
 	switch {
+	case t.Passed == 0 && failed == 0 && t.Errors == 0 && pkgs > 0 && t.PkgNoRun == pkgs:
+		return c.yellow + "no tests ran" + c.reset + c.faint + fmt.Sprintf(" (no test matched in %s)", plural(pkgs, "package")) + c.reset
 	case t.Passed > 0:
 		add(t.Passed, "passed", c.green)
-	case failed == 0 && t.Errors > 0 && pkgs == 0:
-		parts = append(parts, c.red+"no tests ran"+c.reset)
+	case failed == 0 && (t.Errors > 0 || t.NoneRan) && pkgs == 0:
+		parts = append(parts, c.yellow+"no tests ran"+c.reset)
 	case failed == 0 && t.Errors == 0 && pkgs == 0:
 		parts = append(parts, c.green+"0 passed"+c.reset)
 	}
@@ -211,6 +232,9 @@ func testCounts(r *digest.Report, c pal) string {
 	add(t.XFailed, "xfailed", c.yellow)
 	if pkgs > 0 {
 		pk := fmt.Sprintf("%d/%d packages ok", t.PkgOK, pkgs)
+		if t.PkgNoRun > 0 {
+			pk += fmt.Sprintf(" (%d of them ran no tests)", t.PkgNoRun)
+		}
 		if t.PkgNoTests > 0 {
 			pk += fmt.Sprintf(", %s without tests", plural(t.PkgNoTests, "package"))
 		}
@@ -238,32 +262,25 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 	}
 	room -= sections * 2 // section titles and blank lines
 
-	// 1. one line per error / failure, as many as fit (at least one), keeping
-	// room for the first one's explanation: with 50 failures of one cause,
-	// the cause matters more than the 50th name
-	lines := func(it *digest.Item) int {
-		if len(it.Locs) > 0 {
-			return 2
-		}
-		return 1
-	}
-	reserve := 0
-	if len(important) > 0 {
-		if b := len(important[0].Body); b > 0 && b <= room/2 {
-			reserve = b
-		}
+	// The guarantees, whatever the budget: the first error or failure keeps
+	// its explanation, and every error and failure gets a line (beyond
+	// alwaysListed of them, as many as the budget allows). Bodies of the
+	// others and warnings get what's left.
+	lines := func(it *digest.Item) int { return 1 + locLines(it) }
+	withBody := map[*digest.Item]bool{}
+	if len(important) > 0 && len(important[0].Body) > 0 {
+		withBody[important[0]] = true
+		room -= len(important[0].Body)
 	}
 	shown := 0
 	for _, it := range important {
-		if shown > 0 && lines(it) > room-reserve {
+		if shown >= alwaysListed && lines(it) > room {
 			break
 		}
 		room -= lines(it)
 		shown++
 	}
-	// 2. their bodies, in order, while they fit
-	withBody := map[*digest.Item]bool{}
-	for _, it := range important[:shown] {
+	for _, it := range important[min(1, shown):shown] {
 		if len(it.Body) > 0 && len(it.Body) <= room {
 			withBody[it] = true
 			room -= len(it.Body)
@@ -330,12 +347,17 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 				w.line("    %s%s%s", c.faint, clip(l), c.reset)
 			}
 		}
-		if len(it.Locs) > 0 {
-			locs, extra := it.Locs, ""
-			if len(locs) > 6 {
-				locs, extra = locs[:6], fmt.Sprintf(" +%d more", len(locs)-6)
+		for k := 0; k < min(len(it.Locs), maxLocs); k += locsPerLine {
+			chunk := it.Locs[k:min(k+locsPerLine, len(it.Locs), maxLocs)]
+			label := "also at "
+			if k > 0 {
+				label = "        "
 			}
-			w.line("    %salso at %s%s%s", c.faint, strings.Join(locs, ", "), extra, c.reset)
+			extra := ""
+			if k+locsPerLine >= maxLocs && len(it.Locs) > maxLocs {
+				extra = fmt.Sprintf(" +%d more (full log)", len(it.Locs)-maxLocs)
+			}
+			w.line("    %s%s%s%s%s", c.faint, label, strings.Join(chunk, ", "), extra, c.reset)
 		}
 	}
 
@@ -360,6 +382,10 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 		}
 	}
 	if nWarn > 0 {
+		if warnShown == 0 {
+			w.line("\n%s%s (not shown: the budget went to errors; full log below)%s", c.yellow, plural(total(r.Warnings), "warning"), c.reset)
+			return
+		}
 		w.line("\n%s%s:%s", c.yellow, plural(total(r.Warnings), "warning"), c.reset)
 		for _, it := range r.Warnings[:warnShown] {
 			emit(it, c.yellow)
@@ -368,6 +394,17 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 			w.line("  %s… and %s not shown (full log below)%s", c.faint, plural(n, "more warning"), c.reset)
 		}
 	}
+}
+
+const (
+	alwaysListed = 30 // errors and failures that get a line under any budget
+	maxLocs      = 40 // "also at" locations listed before "+N more"
+	locsPerLine  = 8
+)
+
+func locLines(it *digest.Item) int {
+	n := min(len(it.Locs), maxLocs)
+	return (n + locsPerLine - 1) / locsPerLine
 }
 
 func total(items []*digest.Item) int {
@@ -390,6 +427,15 @@ func distinct(ls []string) []string {
 	return out
 }
 
+// CommandFull renders argv completely, for the log.
+func CommandFull(argv []string) string {
+	parts := make([]string, len(argv))
+	for i, a := range argv {
+		parts[i] = shellQuote(a)
+	}
+	return strings.Join(parts, " ")
+}
+
 // Command renders argv so it can be pasted back into a shell: arguments
 // with spaces or quotes are single-quoted, control characters are escaped,
 // and very long commands are shortened.
@@ -397,8 +443,8 @@ func Command(argv []string) string {
 	parts := make([]string, len(argv))
 	for i, a := range argv {
 		parts[i] = shellQuote(a)
-		if first, _, multi := strings.Cut(a, "\n"); multi && len(parts[i]) > 60 {
-			parts[i] = shellQuote(first) + "…" // a script passed with -c: its first line names it
+		if first, _, multi := strings.Cut(a, "\n"); multi {
+			parts[i] = shellQuote(first) + "…" // a script passed with -c: its first line names it (the log has it all)
 		}
 	}
 	s := strings.Join(parts, " ")
@@ -413,7 +459,7 @@ func shellQuote(a string) string {
 		return "''"
 	}
 	if strings.IndexFunc(a, func(r rune) bool { return unicode.IsControl(r) }) >= 0 {
-		return "$" + strings.ReplaceAll(strconv.Quote(a), "'", "\\'") // $"…" with escapes, like bash's $'…'
+		return ansiCQuote(a)
 	}
 	if strings.IndexFunc(a, func(r rune) bool {
 		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("-_./:=@%+,", r))
@@ -421,6 +467,29 @@ func shellQuote(a string) string {
 		return a
 	}
 	return "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+}
+
+// ansiCQuote writes bash's $'…' form, which expands \n, \t and \xHH.
+func ansiCQuote(a string) string {
+	var b strings.Builder
+	b.WriteString("$'")
+	for _, r := range a {
+		switch {
+		case r == '\\' || r == '\'':
+			b.WriteRune('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString("'")
+	return b.String()
 }
 
 func signalName(s syscall.Signal) string {

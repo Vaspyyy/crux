@@ -87,7 +87,7 @@ func run(args []string) int {
 			}
 			if other {
 				// never hand a script another directory's log
-				fmt.Fprintf(os.Stderr, "crux: no run in this directory yet (the newest log from anywhere is %s)\n", p)
+				fmt.Fprintln(os.Stderr, "crux: no crux run in this directory yet")
 				return 1
 			}
 			fmt.Println(p)
@@ -154,7 +154,7 @@ func run(args []string) int {
 	start := time.Now()
 	var log *logstore.Log
 	if !o.noLog {
-		log, _ = logstore.Open(argv, cwd, start, command) // no log is not a reason to fail the run
+		log, _ = logstore.Open(argv, cwd, start, render.CommandFull(argv)) // no log is not a reason to fail the run
 	}
 	var lines []string
 	res, err := runner.Run(argv, env, func(raw string) {
@@ -195,9 +195,11 @@ func run(args []string) int {
 	if o.verbose {
 		fmt.Println()
 	}
-	fmt.Print(render.Report(render.Run{
-		Argv: argv, Exit: res.Exit, Signal: res.Signal, Duration: res.Duration, LogPath: logPath, Lines: lines,
-	}, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw}))
+	rr := render.Run{Argv: argv, Exit: res.Exit, Signal: res.Signal, Duration: res.Duration, LogPath: logPath, Lines: lines}
+	if o.raw { // stdout is the cleaned output and nothing else
+		fmt.Fprint(os.Stderr, render.Header(rr, color && term.IsTerminal(int(os.Stderr.Fd()))))
+	}
+	fmt.Print(render.Report(rr, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw}))
 	return res.Exit
 }
 
@@ -208,7 +210,8 @@ func splitShortFlags(args []string) []string {
 		if !strings.HasPrefix(a, "-") || a == "-" || a == "--" {
 			return append(out, args[i:]...)
 		}
-		if strings.HasPrefix(a, "--") || len(a) < 3 || strings.Trim(a[1:], "vrAhb") != "" {
+		// -b takes a value, so it may only come last in a group ("-vb 30")
+		if strings.HasPrefix(a, "--") || len(a) < 3 || strings.Trim(a[1:], "vrAhb") != "" || strings.Contains(a[1:len(a)-1], "b") {
 			out = append(out, a)
 			if a == "-b" || a == "--budget" { // its value isn't the command
 				if i+1 < len(args) {

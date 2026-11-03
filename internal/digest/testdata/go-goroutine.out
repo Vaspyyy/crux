@@ -1,0 +1,9 @@
+panic: assignment to entry in nil map
+
+goroutine 9 [running]:
+example.com/gor.TestB.func1()
+	/work/gor/p_test.go:10 +0x28
+created by example.com/gor.TestB in goroutine 8
+	/work/gor/p_test.go:10 +0x1a
+FAIL	example.com/gor	0.004s
+FAIL

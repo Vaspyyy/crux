@@ -42,7 +42,7 @@ Flags go before the command; everything after the command's name belongs to the 
 | --- | --- |
 | `-b`, `--budget N` | Roughly how many lines the report may use (default 60). |
 | `-v`, `--verbose` | Stream the output while the command runs, then print the report. |
-| `-r`, `--raw` | Print the whole output, cleaned of escape codes and progress bars, instead of a report. |
+| `-r`, `--raw` | Print the whole output, cleaned of escape codes and progress bars, instead of a report. The verdict line goes to stderr. |
 | `-A`, `--agent` | Plain report without colors or live status. This is the default when stdout isn't a terminal. |
 | `--keep-locale` | Don't switch the command to English messages. |
 | `--no-log` | Don't keep the full output on disk. |
@@ -56,11 +56,11 @@ Short flags can be combined (`crux -rv make`).
 
 The first line is the verdict, the command, its exit code (or the signal that killed it), how long it took and how much output it produced. For test runs, a `tests:` line follows with the counts from the tool's own summary: passed, failed, errors, skipped and so on. Go without `-v` only reports packages, so crux shows `3/4 packages ok` then rather than inventing a test count.
 
-Errors, failed tests and warnings come next, each with its location. Errors carry the code frame or the frames of a stack trace that are in your code, and failed tests carry the assertion or panic message. When three or more errors share a message they're folded into one entry that keeps all locations, and warnings are folded by kind with every name listed (`unused variable ×2: ‘unused’, ‘y’`). A location whose file doesn't exist relative to the current directory is marked, which catches stale caches and paths relative to another root.
+Errors, failed tests and warnings come next, each with its location. Errors carry the code frame or the frames of a stack trace that are in your code, and failed tests carry the assertion or panic message. When three or more errors are the same (same message, and for Rust the same expected and found types) they're folded into one entry that lists every location, and warnings are folded by kind with every name listed (`unused variable [-Wunused-variable] ×2: ‘unused’, ‘y’`). Tools print paths relative to their own root, so crux looks a location's file up from the current directory, the directories make entered and the parent directories, and rewrites the path so it works from where you are. A location whose file can't be found anywhere is marked, which catches stale caches.
 
-A `notes:` section says when a run did less than it seems to have done: cargo stopping at the first failing test target, a Go test panic ending the rest of its package, pytest stopping after a collection error, a package that didn't build.
+A `notes:` section says when a run did less than it seems to have done: cargo stopping at the first failing test target, a Go test panic (also one in a goroutine) ending the rest of its package, a `-run` filter that matched no test, pytest stopping after a collection error, after `-x` or on Ctrl+C, a package that didn't build.
 
-The report stays within its budget. Every error and failed test gets at least one line before any code frame or warning does, the first failure keeps its explanation, and anything cut is announced with a count. Output of eight lines or fewer is printed as is, and output crux doesn't recognise is shown whole if it's short, or summarised by its error-looking lines and its last lines if it isn't.
+The budget is soft and has two guarantees: the first error or failed test always keeps its explanation, and every error and failed test gets a line (beyond 30 of them, as many as the budget allows). Code frames of the others and warnings get what's left, and anything cut is announced with a count. Output crux doesn't recognise is shown whole if it's short, or summarised by its error-looking lines and its last lines if it isn't.
 
 The full output is written to `~/.local/state/crux/logs` while the command runs, so it survives a timeout or Ctrl+C. Every run gets its own file (readable only by you), the report ends with its path, and logs are deleted after a week. `crux --log` prints the path of the latest log from the current directory and fails if there isn't one, so `less "$(crux --log)"` never opens the wrong file.
 
