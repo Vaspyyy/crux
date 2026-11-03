@@ -198,3 +198,17 @@ func TestRawIsJustTheOutput(t *testing.T) {
 		t.Errorf("got %q", out)
 	}
 }
+
+// A long t.Errorf message (a whole dumped output) must reach the report:
+// the first failure keeps its explanation, up to 15 lines.
+func TestLongGoFailureMessageIsKept(t *testing.T) {
+	lines := []string{"--- FAIL: TestOverview (0.02s)"}
+	for i := 1; i <= 12; i++ {
+		lines = append(lines, fmt.Sprintf("    main_test.go:138: dump line %d", i))
+	}
+	lines = append(lines, "FAIL", "FAIL\texample.com/x\t0.03s", "FAIL")
+	out := Report(Run{Argv: []string{"go"}, Exit: 1, Lines: lines}, digest.Digest(lines, 1), Options{Budget: 60})
+	if !strings.Contains(out, "dump line 12") {
+		t.Errorf("message cut short:\n%s", out)
+	}
+}

@@ -118,7 +118,7 @@ func rustTestFailure(s *state, i int) int {
 			it.Loc = d[1] + ":" + d[2]
 		}
 	}
-	it.Body = capLines(it.Body, 6)
+	it.Body = capLines(it.Body, 15)
 	s.r.Failures = append(s.r.Failures, it)
 	return end
 }

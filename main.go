@@ -20,7 +20,7 @@ import (
 	"github.com/Vaspyyy/crux/internal/runner"
 )
 
-const version = "0.3.0"
+const version = "0.3.1"
 
 const usage = `crux runs a build, test or lint command and shows only what matters.
 

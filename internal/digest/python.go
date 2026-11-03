@@ -116,7 +116,7 @@ func pytestSections(s *state, i int) int {
 				s.r.Errors = append(s.r.Errors, it)
 				continue
 			}
-			it.Body = capLines(it.Body, 6)
+			it.Body = capLines(it.Body, 15)
 			s.r.Failures = append(s.r.Failures, it)
 		}
 		return end

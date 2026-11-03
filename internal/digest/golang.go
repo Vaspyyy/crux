@@ -114,7 +114,7 @@ func goTestFailure(s *state, i int) int {
 		s.goPanicked = name
 		end = next
 	}
-	it.Body = capLines(it.Body, 6)
+	it.Body = capLines(it.Body, 15) // the budget decides what fits; a test's own message is worth keeping
 	s.r.Failures = append(s.r.Failures, it)
 	s.goPending = append(s.goPending, it)
 	return end
