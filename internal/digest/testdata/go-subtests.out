@@ -1,0 +1,10 @@
+=== RUN   TestSame
+=== RUN   TestSame/sub_one
+    x_test.go:6: fail in a
+=== RUN   TestSame/sub_two
+--- FAIL: TestSame (0.00s)
+    --- FAIL: TestSame/sub_one (0.00s)
+    --- PASS: TestSame/sub_two (0.00s)
+FAIL
+FAIL	example.com/gsub	0.002s
+FAIL

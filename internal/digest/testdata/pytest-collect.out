@@ -1,0 +1,40 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.0.2, pluggy-1.6.0
+PySide6 6.12.0 -- Qt runtime 6.12.0 -- Qt compiled 6.12.0
+rootdir: /work/perr
+plugins: cov-7.1.0, qt-4.5.0, platformdirs-4.13.5
+collected 0 items / 1 error
+
+==================================== ERRORS ====================================
+_________________________ ERROR collecting test_bad.py _________________________
+/home/user/.local/lib/python3.14/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/home/user/.local/lib/python3.14/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1406: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1371: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1342: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:938: in _load_unlocked
+    ???
+/home/user/.local/lib/python3.14/site-packages/_pytest/assertion/rewrite.py:188: in exec_module
+    source_stat, co = _rewrite_test(fn, self.config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/user/.local/lib/python3.14/site-packages/_pytest/assertion/rewrite.py:357: in _rewrite_test
+    tree = ast.parse(source, filename=strfn)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.14/ast.py:46: in parse
+    return compile(source, filename, mode, flags,
+E     File "/work/perr/test_bad.py", line 1
+E       def test_x(:
+E                  ^
+E   SyntaxError: invalid syntax
+=========================== short test summary info ============================
+ERROR test_bad.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+=============================== 1 error in 0.14s ===============================

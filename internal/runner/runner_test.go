@@ -3,6 +3,7 @@ package runner
 import (
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestRunReportsSignals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Exit != 128+15 || res.Signal == "" {
+	if res.Exit != 128+15 || res.Signal != syscall.SIGTERM {
 		t.Errorf("exit = %d signal = %q", res.Exit, res.Signal)
 	}
 }

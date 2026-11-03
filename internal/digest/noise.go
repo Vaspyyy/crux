@@ -21,9 +21,11 @@ var noiseRes = []*regexp.Regexp{
 	regexp.MustCompile(`^(added|removed|changed|audited|up to date)\b.*\bpackages?\b`),
 	regexp.MustCompile(`^(found 0 vulnerabilities|\d+ packages? (are|is) looking for funding|  run .npm fund. for details)`),
 	regexp.MustCompile(`^Node\.js v\d`),
+	regexp.MustCompile(`^npm notice`),
 	regexp.MustCompile(`^> \S+@\S+ \S+`), // npm run banner
 	// make
 	regexp.MustCompile(`^g?make(\[\d+\])?: (Entering|Leaving) directory`),
+	regexp.MustCompile(`^!{4,} .* !{4,}$`), // pytest "Interrupted: …" banner
 	// separators
 	regexp.MustCompile(`^[=\-_*~#.]{4,}$`),
 }

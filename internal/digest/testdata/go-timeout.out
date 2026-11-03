@@ -1,0 +1,37 @@
+--- FAIL: TestFails (0.00s)
+    x_test.go:5: plain failure
+panic: test timed out after 1s
+	running tests:
+		TestSlow (1s)
+
+goroutine 17 [running]:
+testing.(*M).startAlarm.func1()
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2802 +0x34b
+created by time.goFunc
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/time/sleep.go:215 +0x2d
+
+goroutine 1 [chan receive]:
+testing.(*T).Run(0x164de14ee008, {0x5856c0?, 0x164de14beb30?}, 0x592ce8)
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2109 +0x4e5
+testing.runTests.func1(0x164de14ee008)
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2585 +0x37
+testing.tRunner(0x164de14ee008, 0x164de14bec58)
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2036 +0xea
+testing.runTests({0x587616, 0xf}, {0x587616, 0xf}, 0x164de141e060, {0x6d17e0, 0x2, 0x2}, {0xc2b2859cf3bdc150, 0x3b9c7bb2, ...})
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2583 +0x505
+testing.(*M).Run(0x164de14c2140)
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2443 +0x6ac
+main.main()
+	_testmain.go:48 +0x9b
+
+goroutine 8 [sleep]:
+time.Sleep(0xb2d05e00)
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/runtime/time.go:363 +0x165
+example.com/gto.TestSlow(0x164de14ee488?)
+	/work/gto/x_test.go:6 +0x18
+testing.tRunner(0x164de14ee488, 0x592ce8)
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2036 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.0.linux-amd64/src/testing/testing.go:2101 +0x4c5
+FAIL	example.com/gto	1.004s
+FAIL

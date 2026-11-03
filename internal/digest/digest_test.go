@@ -38,9 +38,6 @@ func dump(r *Report) string {
 	for _, n := range r.Notes {
 		fmt.Fprintf(&b, "NOTE %s\n", n)
 	}
-	for _, l := range r.Tail {
-		fmt.Fprintf(&b, "TAIL %s\n", l)
-	}
 	return b.String()
 }
 
@@ -79,7 +76,7 @@ func TestFixtures(t *testing.T) {
 		"go-big.out": {failures: 1, passed: 250, contains: []string{
 			"TestBroken @ big_test.go:255", "expected port 8080"}, absent: []string{"checking case"}},
 		"pytest.out": {failures: 3, passed: 1, failed: 3, contains: []string{
-			"test_add_wrong @ test_calc.py:7", "E assert 3 == 4", "raised at calc.py:5"},
+			"test_add_wrong @ test_calc.py:7", "E       assert 3 == 4", "raised at calc.py:5"},
 			absent: []string{"platform linux", "plugins:"}},
 		"tsc.out":        {errors: 3, contains: []string{"TS2322: Type 'string' is not assignable to type 'number'. @ a.ts:1:7"}},
 		"tsc-pretty.out": {errors: 3, contains: []string{"TS2741", "@ a.ts:5:7"}},
@@ -120,5 +117,87 @@ func TestFixtures(t *testing.T) {
 func TestCleanResolvesCarriageReturns(t *testing.T) {
 	if got := Clean("\x1b[32mDownloading 10%\rDownloading 100%\x1b[0m\r\n"); got != "Downloading 100%" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// Regressions found by the first round of model reviews.
+func TestReviewRegressions(t *testing.T) {
+	cases := map[string]want{
+		// 12 errors with one message on 12 lines are 12 errors, not "1 error ×12"
+		"rustc-many.out": {errors: 12, contains: []string{"@ many.rs:2:", "@ many.rs:13:"}},
+		// pytest -q has no === border around its summary
+		"pytest-q.out": {failures: 1, errors: 1, warnings: 1, passed: 3, failed: 1,
+			contains: []string{"fixture exploded", "DeprecationWarning: old api"}},
+		"pytest-mixed.out": {failures: 1, errors: 1, warnings: 1, passed: 3, failed: 1},
+		// a collection error is an error, not a failed test
+		"pytest-collect.out": {errors: 1, contains: []string{"SyntaxError", "test_bad.py:1"}},
+		// go -v subtests: the message is printed before the --- FAIL line
+		"go-subtests.out": {failures: 1, contains: []string{"TestSame/sub_one @ x_test.go:6", "fail in a"},
+			absent: []string{"FAIL TestSame @"}},
+		// the timeout panic names the test that hung, not the previous failure
+		"go-timeout.out": {errors: 1, failures: 1, contains: []string{
+			"TestFails @ x_test.go:5", "test timed out after 1s while running TestSlow"},
+			absent: []string{"TestFails @ x_test.go:5 ×0 []\n    | plain failure\n    | panic"}},
+		// "too many errors" is the compiler giving up, not an eleventh error
+		"go-many.out":     {errors: 10, contains: []string{"NOTE go: too many errors"}},
+		"node-throw.out":  {errors: 1, contains: []string{"Error: boom @ [eval]:1:7"}},
+		"node-syntax.out": {errors: 1, contains: []string{"SyntaxError: Unexpected number @ /work/bad.js:2"}},
+		// a prompt without a newline must not hide the traceback
+		"py-eof.out": {errors: 1, contains: []string{"EOFError: EOF when reading a line"}},
+	}
+	for name, w := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := Digest(load(t, name), 1)
+			d := dump(r)
+			if len(r.Errors) != w.errors || len(r.Failures) != w.failures || len(r.Warnings) != w.warnings {
+				t.Errorf("errors/failures/warnings = %d/%d/%d, want %d/%d/%d\n%s",
+					len(r.Errors), len(r.Failures), len(r.Warnings), w.errors, w.failures, w.warnings, d)
+			}
+			if w.passed+w.failed > 0 && (r.Tests.Passed != w.passed || r.Tests.Failed != w.failed) {
+				t.Errorf("passed/failed = %d/%d, want %d/%d\n%s", r.Tests.Passed, r.Tests.Failed, w.passed, w.failed, d)
+			}
+			for _, c := range w.contains {
+				if !strings.Contains(d, c) {
+					t.Errorf("missing %q in\n%s", c, d)
+				}
+			}
+			for _, a := range w.absent {
+				if strings.Contains(d, a) {
+					t.Errorf("should not contain %q:\n%s", a, d)
+				}
+			}
+		})
+	}
+}
+
+func TestWarningsKeepTheirNames(t *testing.T) {
+	r := Digest(load(t, "make-gcc.out"), 1)
+	if len(r.Warnings) != 1 || r.Warnings[0].Count != 2 {
+		t.Fatalf("want one folded warning ×2, got %s", dump(r))
+	}
+	if got := strings.Join(r.Warnings[0].Names, " "); got != "‘unused’ ‘y’" {
+		t.Errorf("names = %q", got)
+	}
+}
+
+func TestPlainFailLineIsNotGo(t *testing.T) {
+	var lines []string
+	for i := 1; i <= 50; i++ {
+		lines = append(lines, fmt.Sprint(i))
+	}
+	lines = append(lines, "FAIL x")
+	r := Digest(lines, 1)
+	if r.HasTests || r.Tail[len(r.Tail)-1] != "FAIL x" {
+		t.Errorf("a plain FAIL line was taken for go test output: %s / tail %q", dump(r), r.Tail)
+	}
+}
+
+func TestGenericErrorsAreNotCapped(t *testing.T) {
+	var lines []string
+	for i := 1; i <= 12; i++ {
+		lines = append(lines, fmt.Sprintf("error: e%d at f.c:%d", i, i))
+	}
+	if r := Digest(lines, 1); len(r.Errors) != 12 {
+		t.Errorf("got %d errors, want 12", len(r.Errors))
 	}
 }

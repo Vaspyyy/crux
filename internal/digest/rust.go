@@ -11,7 +11,9 @@ var (
 	rustArrowRe   = regexp.MustCompile(`^\s*--> (.+)$`)
 	rustCodeRe    = regexp.MustCompile(`^\s*\d+\s*\|`)
 	rustMarkRe    = regexp.MustCompile(`^\s*\|.*[\^\-~]`)
-	rustSuggestRe = regexp.MustCompile(`^\s*\d+ [-+] `)
+	rustSuggestRe = regexp.MustCompile(`^\s*\d+ - `) // the old line of a suggestion; the new one (+) is kept
+	rustAddRe     = regexp.MustCompile(`^\s*\d+ \+ `)
+	rustLabelRe   = regexp.MustCompile(`^\s*\|\s+\S`)
 	rustTestHdrRe = regexp.MustCompile(`^---- (.+) stdout ----$`)
 	rustPanicRe   = regexp.MustCompile(`^thread '([^']+)'(?: \(\d+\))? panicked at (.+):$`)
 	rustResultRe  = regexp.MustCompile(`^test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored`)
@@ -36,7 +38,8 @@ func rustDiag(s *state, i int) int {
 		// cargo's own lines: "error: could not compile `x` …", "warning: `x` generated 3 warnings"
 		switch {
 		case strings.HasPrefix(msg, "could not compile"), strings.HasPrefix(msg, "test failed, to rerun"),
-			strings.Contains(msg, "generated ") && strings.Contains(msg, "warning"):
+			strings.Contains(msg, "generated ") && strings.Contains(msg, "warning"),
+			strings.HasSuffix(msg, "warnings emitted"), strings.HasSuffix(msg, "warning emitted"):
 			s.tool("cargo")
 			return i + 1
 		case kind == "error" && (strings.HasPrefix(msg, "Recipe `") || strings.Contains(msg, "aborting due to")):
@@ -55,7 +58,9 @@ func rustDiag(s *state, i int) int {
 		switch {
 		case t == "|" || t == "":
 		case rustSuggestRe.MatchString(l):
-		case rustCodeRe.MatchString(l), rustMarkRe.MatchString(l),
+		case rustAddRe.MatchString(l):
+			body = append(body, strings.TrimRight(l, " ")+"   (suggested)")
+		case rustCodeRe.MatchString(l), rustMarkRe.MatchString(l), rustLabelRe.MatchString(l),
 			strings.HasPrefix(t, "= help:"), strings.HasPrefix(t, "help:"), strings.HasPrefix(t, "= note:"):
 			body = append(body, strings.TrimRight(l, " "))
 		}
@@ -64,7 +69,7 @@ func rustDiag(s *state, i int) int {
 	if code != "" {
 		title = code + ": " + msg
 	}
-	it := &Item{Kind: kind, Title: title, Loc: loc, Body: capLines(body, 6)}
+	it := &Item{Kind: kind, Title: title, Loc: loc, Body: capLines(body, 8)}
 	if kind == "error" {
 		s.r.Errors = append(s.r.Errors, it)
 	} else {

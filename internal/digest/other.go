@@ -18,7 +18,7 @@ var (
 	eslintFileRe = regexp.MustCompile(`^(/\S+|\S+\.(?:[cm]?[jt]sx?|vue|svelte))$`)
 	eslintItemRe = regexp.MustCompile(`^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)$`)
 	eslintSumRe  = regexp.MustCompile(`^✖ \d+ problems?`)
-	nodeErrRe    = regexp.MustCompile(`^(?:Uncaught )?([A-Z]\w*(?:Error|Exception))(?:: (.*))?$`)
+	nodeErrRe    = regexp.MustCompile(`^(?:Uncaught )?((?:[A-Z]\w*)?(?:Error|Exception))(?:: (.*))?$`)
 	nodeAtRe     = regexp.MustCompile(`^\s+at (?:.*\()?(.+?:\d+:\d+)\)?$`)
 	nodeHdrRe    = regexp.MustCompile(`^(\S+):(\d+)$`)
 	makeErrRe    = regexp.MustCompile(`^(g?make|ninja)(\[\d+\])?: (\*\*\* .+|build stopped.*)$`)
@@ -196,10 +196,15 @@ func nodeError(s *state, i int) int {
 		}
 		end++
 	}
-	// node prints "file:line / code / ^" above the error: show the code
+	// node prints "file:line / code / ^" above the error: show the code, and
+	// use it as the location when the stack has none of the user's frames
+	// (syntax errors)
 	for j := max(0, i-5); j < i; j++ {
 		if h := nodeHdrRe.FindStringSubmatch(s.lines[j]); h != nil && j+1 < i && !s.used[j] {
 			it.Body = append([]string{strings.TrimRight(s.lines[j+1], " ")}, it.Body...)
+			if it.Loc == "" {
+				it.Loc = h[1] + ":" + h[2]
+			}
 			s.consume(j, i)
 			break
 		}

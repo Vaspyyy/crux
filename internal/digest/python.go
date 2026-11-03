@@ -14,8 +14,11 @@ var (
 	pyShortRe    = regexp.MustCompile(`^(FAILED|ERROR) (\S+)(?: - (.*))?$`)
 	pyFinalRe    = regexp.MustCompile(`^=+ (.+?) in [\d.]+s(?: \([^)]*\))? =+$`)
 	pyCountRe    = regexp.MustCompile(`(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)`)
-	pyProgressRe = regexp.MustCompile(`^\S+\.py [.FEsxX]+\s*(\[\s*\d+%\])?$`)
+	pyProgressRe = regexp.MustCompile(`^(\S+\.py )?[.FEsxX]+\s*\[\s*\d+%\]$|^\S+\.py [.FEsxX]+$`)
 	pyFrameRe    = regexp.MustCompile(`^  File "(.+)", line (\d+), in (.+)$`)
+	pyQuietRe    = regexp.MustCompile(`^(\d+ (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)(, )?)+ in [\d.]+s( \([^)]*\))?$`)
+	pyWarnRe     = regexp.MustCompile(`^\s+(\S+\.py):(\d+): (\w*Warning): (.+)$`)
+	pyEFileRe    = regexp.MustCompile(`File "(.+?)", line (\d+)`)
 )
 
 // pytestSections handles the FAILURES / ERRORS sections and the header.
@@ -45,6 +48,9 @@ func pytestSections(s *state, i int) int {
 				break
 			}
 			it := &Item{Kind: "fail", Title: b[1]}
+			if m[1] == "ERRORS" { // collection or fixture errors: no test ran
+				it.Kind = "error"
+			}
 			end++
 			var raised string
 			for end < len(s.lines) && !pyBlockRe.MatchString(s.lines[end]) && !pyBannerRe.MatchString(s.lines[end]) {
@@ -55,8 +61,11 @@ func pytestSections(s *state, i int) int {
 				case strings.HasPrefix(t, "> "), strings.HasPrefix(t, ">\t"):
 					it.Body = append(it.Body, t)
 				case strings.HasPrefix(l, "E "):
-					if e := strings.TrimSpace(l[1:]); e != "" {
-						it.Body = append(it.Body, "E "+e)
+					if e := strings.TrimRight(l[1:], " "); strings.TrimSpace(e) != "" {
+						it.Body = append(it.Body, "E"+e) // keep the alignment of diffs and carets
+					}
+					if f := pyEFileRe.FindStringSubmatch(l); f != nil && it.Kind == "error" {
+						raised = f[1] + ":" + f[2]
 					}
 				default:
 					if loc := pyLocRe.FindStringSubmatch(t); loc != nil {
@@ -72,6 +81,28 @@ func pytestSections(s *state, i int) int {
 			if raised != "" && raised != it.Loc {
 				it.Body = append(it.Body, "raised at "+raised)
 			}
+			if it.Kind == "error" {
+				// title: the exception, not "ERROR collecting x.py"
+				for k := len(it.Body) - 1; k >= 0; k-- {
+					if strings.HasPrefix(it.Body[k], "E ") && strings.Contains(it.Body[k], "Error") {
+						it.Body = append([]string{b[1]}, it.Body...)
+						it.Title = strings.TrimSpace(it.Body[k+1][1:])
+						break
+					}
+				}
+				if raised != "" {
+					it.Loc = raised
+					for k, b := range it.Body {
+						if b == "raised at "+raised {
+							it.Body = append(it.Body[:k], it.Body[k+1:]...)
+							break
+						}
+					}
+				}
+				it.Body = capLines(it.Body, 6)
+				s.r.Errors = append(s.r.Errors, it)
+				continue
+			}
 			it.Body = capLines(it.Body, 6)
 			s.r.Failures = append(s.r.Failures, it)
 		}
@@ -79,13 +110,13 @@ func pytestSections(s *state, i int) int {
 	case m[1] == "short test summary info":
 		s.tool("pytest")
 		end := i + 1
-		have := len(s.r.Failures) > 0
+		have := len(s.r.Failures)+len(s.r.Errors) > 0
 		for end < len(s.lines) {
 			sm := pyShortRe.FindStringSubmatch(s.lines[end])
 			if sm == nil {
 				break
 			}
-			if !have { // -q / --tb=no runs only have this list
+			if !have && sm[1] == "FAILED" { // --tb=no runs only have this list
 				it := &Item{Kind: "fail", Title: sm[2]}
 				if sm[3] != "" {
 					it.Body = []string{sm[3]}
@@ -97,8 +128,11 @@ func pytestSections(s *state, i int) int {
 		return end
 	case strings.Contains(m[1], "warnings summary"):
 		s.tool("pytest")
-		end := i + 1 // keep the count from the final line, drop the details
+		end := i + 1
 		for end < len(s.lines) && !pyBannerRe.MatchString(s.lines[end]) && !strings.HasPrefix(s.lines[end], "-- Docs:") {
+			if w := pyWarnRe.FindStringSubmatch(s.lines[end]); w != nil {
+				s.r.Warnings = append(s.r.Warnings, &Item{Kind: "warning", Title: w[3] + ": " + w[4], Loc: w[1] + ":" + w[2]})
+			}
 			end++
 		}
 		if end < len(s.lines) && strings.HasPrefix(s.lines[end], "-- Docs:") {
@@ -116,20 +150,29 @@ func pytestSummary(s *state, i int) int {
 		s.tool("pytest")
 		return i + 1
 	}
-	m := pyFinalRe.FindStringSubmatch(l)
-	if m == nil {
+	summary := ""
+	if m := pyFinalRe.FindStringSubmatch(l); m != nil {
+		summary = m[1]
+	} else if pyQuietRe.MatchString(l) { // pytest -q: no === border
+		summary = l
+	}
+	if summary == "" {
 		return 0
 	}
 	s.tool("pytest")
-	for _, c := range pyCountRe.FindAllStringSubmatch(m[1], -1) {
+	for _, c := range pyCountRe.FindAllStringSubmatch(summary, -1) {
 		n, _ := strconv.Atoi(c[1])
 		switch c[2] {
 		case "passed", "xpassed":
 			s.r.Tests.Passed += n
-		case "failed", "error", "errors":
+		case "failed":
 			s.r.Tests.Failed += n
-		case "skipped", "xfailed", "deselected":
+		case "error", "errors":
+			s.r.Tests.Errors += n
+		case "skipped", "deselected":
 			s.r.Tests.Skipped += n
+		case "xfailed":
+			s.r.Tests.XFailed += n
 		}
 	}
 	return i + 1
@@ -138,7 +181,7 @@ func pytestSummary(s *state, i int) int {
 // pyTraceback handles a Python traceback: the exception plus the frame
 // that raised it.
 func pyTraceback(s *state, i int) int {
-	if s.lines[i] != "Traceback (most recent call last):" {
+	if !strings.HasSuffix(s.lines[i], "Traceback (most recent call last):") {
 		return 0
 	}
 	s.tool("python")
@@ -160,10 +203,13 @@ func pyTraceback(s *state, i int) int {
 		it.Title = strings.TrimSpace(s.lines[end])
 		end++
 	}
-	// the innermost frames tell the story; keep the last two
+	// the innermost frames tell the story; keep the last three
 	if len(frames) > 0 {
 		it.Loc = frames[len(frames)-1].loc
-		for _, f := range frames[max(0, len(frames)-2):] {
+		if n := len(frames) - 3; n > 0 {
+			it.Body = append(it.Body, "(+"+strconv.Itoa(n)+" earlier frames)")
+		}
+		for _, f := range frames[max(0, len(frames)-3):] {
 			line := f.loc + " in " + f.fn
 			if f.code != "" {
 				line += ": " + f.code

@@ -3,7 +3,9 @@
 package digest
 
 import (
+	"path"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -13,32 +15,38 @@ type Item struct {
 	Title string   // the message, or the test name for failures
 	Loc   string   // file:line[:col], if known
 	Body  []string // the few lines that explain it (code frame, assertion, panic message)
-	Count int      // identical items folded into this one
-	Locs  []string // locations of the folded duplicates
+	Count int      // occurrences folded into this one
+	Locs  []string // locations of the folded occurrences
+	Names []string // folded warnings: the distinct names (`a`, `b`, …)
+	Norm  string   // folded warnings: the message with names replaced by …
 }
 
 // Tests counts test results; -1 means the tool didn't say.
 type Tests struct {
 	Passed, Failed, Skipped int
-	PkgOK, PkgFailed        int // go test packages
+	XFailed, Errors         int  // pytest: expected failures, errors outside tests
+	PkgOK, PkgFailed        int  // go test packages
+	Unknown                 bool // go test without -v: only packages are known
 }
 
 func (t *Tests) any() bool {
-	return t.Passed > 0 || t.Failed > 0 || t.Skipped > 0 || t.PkgOK > 0 || t.PkgFailed > 0
+	return t.Passed > 0 || t.Failed > 0 || t.Skipped > 0 || t.XFailed > 0 || t.Errors > 0 || t.PkgOK > 0 || t.PkgFailed > 0
 }
 
 // Report is the digest of one command run.
 type Report struct {
-	Tools    []string // recognised formats, e.g. "cargo", "go test", "pytest"
-	Tests    Tests
-	HasTests bool
-	Errors   []*Item
-	Failures []*Item
-	Warnings []*Item
-	Notes    []string // summary lines worth keeping ("make: *** [all] Error 1")
-	Tail     []string // last meaningful lines, for output nothing else explains
-	Lines    int      // lines of output in total
-	Shown    []string // the whole cleaned output, when it is short enough to show as is
+	Tools      []string // recognised formats, e.g. "cargo", "go test", "pytest"
+	Tests      Tests
+	HasTests   bool
+	Errors     []*Item
+	Failures   []*Item
+	Warnings   []*Item
+	Notes      []string // summary lines worth keeping ("make: *** [all] Error 1")
+	Tail       []string // last meaningful lines, for output nothing else explains
+	Lines      int      // lines of output in total
+	Meaningful []string // non-empty, non-noise lines
+	Structured bool     // a known tool format was recognised
+	Generic    bool     // errors come from the error-looking-line fallback
 }
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-Z\\-_]`)
@@ -62,6 +70,10 @@ type state struct {
 	used  []bool
 	r     *Report
 	tools map[string]bool
+
+	goRun     string              // go test -v: the test currently running
+	goLogs    map[string][]string // go test -v: log lines per test
+	goPending []*Item             // go failures waiting for their "FAIL pkg" line
 }
 
 func (s *state) tool(name string) {
@@ -95,9 +107,9 @@ var extractors = []extractor{
 // Digest analyses cleaned output lines. exit is the command's exit code.
 func Digest(lines []string, exit int) *Report {
 	r := &Report{Lines: len(lines)}
-	s := &state{lines: lines, used: make([]bool, len(lines)), r: r, tools: map[string]bool{}}
+	s := &state{lines: lines, used: make([]bool, len(lines)), r: r, tools: map[string]bool{}, goLogs: map[string][]string{}}
 	for i := 0; i < len(lines); {
-		if s.used[i] {
+		if s.used[i] || len(strings.TrimSpace(lines[i])) < 3 { // nothing we know is that short
 			i++
 			continue
 		}
@@ -115,27 +127,64 @@ func Digest(lines []string, exit int) *Report {
 		}
 	}
 	r.Errors = fold(r.Errors)
-	r.Warnings = fold(r.Warnings)
+	r.Warnings = foldWarnings(r.Warnings)
+	if s.tools["cargo test"] { // cargo prints failures in completion order: make it stable
+		sort.SliceStable(r.Failures, func(i, j int) bool { return r.Failures[i].Title < r.Failures[j].Title })
+	}
+	dropParentFailures(r)
 	for _, group := range [][]*Item{r.Errors, r.Failures, r.Warnings} {
 		for _, it := range group {
 			tidy(it)
 		}
 	}
 	r.HasTests = r.Tests.any() || len(r.Failures) > 0
-
 	// leftovers: lines nothing recognised and that aren't known noise
-	var rest []string
+	var rest, meaningful []string
 	for i, l := range lines {
-		if !s.used[i] && strings.TrimSpace(l) != "" && !isNoise(l) {
+		if strings.TrimSpace(l) == "" || isNoise(l) {
+			continue
+		}
+		meaningful = append(meaningful, l)
+		if !s.used[i] {
 			rest = append(rest, l)
 		}
 	}
+	r.Structured = len(r.Errors)+len(r.Failures)+len(r.Warnings) > 0 || r.HasTests
 	explained := len(r.Errors) > 0 || len(r.Failures) > 0
 	if exit != 0 && !explained {
 		r.Errors = append(r.Errors, genericErrors(rest)...)
+		r.Generic = len(r.Errors) > 0
 	}
-	r.Tail = lastLines(rest, 6)
+	// the true end of the output: what an unexplained failure usually ends with
+	r.Tail = lastLines(meaningful, 8)
+	r.Meaningful = meaningful
 	return r
+}
+
+// dropParentFailures removes "TestX" when only its subtests "TestX/…" carry
+// the failure (go test reports both).
+func dropParentFailures(r *Report) {
+	var out []*Item
+	for _, f := range r.Failures {
+		parent := false
+		for _, g := range r.Failures {
+			if g != f && strings.HasPrefix(g.Title, f.Title+"/") {
+				parent = true
+				break
+			}
+		}
+		own := 0
+		for _, b := range f.Body {
+			if !strings.HasPrefix(b, "in package ") {
+				own++
+			}
+		}
+		if parent && own == 0 {
+			continue
+		}
+		out = append(out, f)
+	}
+	r.Failures = out
 }
 
 // Relative is set by the caller to the working directory; locations under it
@@ -150,8 +199,11 @@ func tidy(it *Item) {
 	}
 	for i, l := range it.Body {
 		it.Body[i] = rel(l)
-		if it.Loc != "" && strings.HasPrefix(it.Body[i], it.Loc+": ") {
-			it.Body[i] = strings.TrimPrefix(it.Body[i], it.Loc+": ")
+		for _, prefix := range []string{it.Loc, path.Base(it.Loc)} {
+			if prefix != "" && prefix != "." && strings.HasPrefix(it.Body[i], prefix+": ") {
+				it.Body[i] = strings.TrimPrefix(it.Body[i], prefix+": ")
+				break
+			}
 		}
 	}
 }
@@ -163,25 +215,53 @@ func rel(s string) string {
 	return strings.ReplaceAll(s, Relative+"/", "")
 }
 
-// fold merges items with the same kind and title ("unused variable ×7").
+// fold merges true duplicates: same message at the same place (rustc and
+// gcc can report one problem twice). Different places stay separate.
 func fold(items []*Item) []*Item {
 	var out []*Item
 	seen := map[string]*Item{}
 	for _, it := range items {
-		key := it.Kind + "\x00" + it.Title
-		if it.Kind == "warning" { // "unused variable: `a`" and "… `b`" are the same warning
-			key = it.Kind + "\x00" + quotedRe.ReplaceAllString(it.Title, "…")
-		}
-		if first, ok := seen[key]; ok {
+		key := it.Kind + "\x00" + it.Title + "\x00" + it.Loc
+		if first, ok := seen[key]; ok && it.Loc != "" {
 			first.Count++
-			if it.Loc != "" {
-				first.Locs = append(first.Locs, it.Loc)
-			}
 			continue
 		}
 		it.Count = 1
 		seen[key] = it
 		out = append(out, it)
+	}
+	return out
+}
+
+// foldWarnings merges warnings of the same kind ("unused variable") and
+// keeps every name and location, so nothing is attributed to the wrong one.
+func foldWarnings(items []*Item) []*Item {
+	var out []*Item
+	seen := map[string]*Item{}
+	for _, it := range items {
+		norm := quotedRe.ReplaceAllString(it.Title, "…")
+		name := quotedRe.FindString(it.Title)
+		if first, ok := seen[norm]; ok {
+			first.Count++
+			if it.Loc != "" {
+				first.Locs = append(first.Locs, it.Loc)
+			}
+			if name != "" {
+				first.Names = append(first.Names, name)
+			}
+			continue
+		}
+		it.Count, it.Norm = 1, norm
+		if name != "" {
+			it.Names = []string{name}
+		}
+		seen[norm] = it
+		out = append(out, it)
+	}
+	for _, it := range out {
+		if it.Count > 1 {
+			it.Body = nil // one instance's code frame would misrepresent the others
+		}
 	}
 	return out
 }
@@ -211,9 +291,6 @@ func genericErrors(rest []string) []*Item {
 			it.Body = []string{rest[i+1]}
 		}
 		out = append(out, it)
-		if len(out) == 8 {
-			break
-		}
 	}
 	return fold(out)
 }

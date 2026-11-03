@@ -4,18 +4,19 @@ package render
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/Vaspyyy/crux/internal/digest"
 )
 
 type Run struct {
-	Command  string
+	Argv     []string
 	Exit     int
-	Signal   string
+	Signal   syscall.Signal // non-zero if the command was killed by a signal
 	Duration time.Duration
 	LogPath  string
 	Lines    []string // cleaned output
@@ -28,196 +29,363 @@ type Options struct {
 }
 
 // palette, ANSI 16 colors so it follows the terminal theme
-type pal struct{ red, green, yellow, blue, magenta, cyan, bold, faint, reset string }
+type pal struct{ red, green, yellow, cyan, bold, faint, reset string }
 
 func palette(on bool) pal {
 	if !on {
 		return pal{}
 	}
-	return pal{"\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m", "\x1b[35m", "\x1b[36m", "\x1b[1m", "\x1b[2m", "\x1b[0m"}
+	return pal{"\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[36m", "\x1b[1m", "\x1b[2m", "\x1b[0m"}
 }
 
-const shortOutput = 20 // at or below this many meaningful lines, just show them
+const (
+	maxLine     = 300 // characters per printed line
+	tinyOutput  = 8   // output this small is printed as is, without the frame
+	shortOutput = 20  // unrecognised output this small is printed whole
+)
+
+type report struct {
+	b     strings.Builder
+	c     pal
+	lines int
+}
+
+func (w *report) line(format string, a ...any) {
+	s := fmt.Sprintf(format, a...)
+	fmt.Fprintln(&w.b, s)
+	w.lines += strings.Count(s, "\n") + 1
+}
+
+// clip keeps one line of output within maxLine characters.
+func clip(s string) string {
+	r := []rune(s)
+	if len(r) <= maxLine {
+		return s
+	}
+	return string(r[:maxLine]) + fmt.Sprintf("…[+%d chars]", len(r)-maxLine)
+}
 
 // Report builds the text for a finished run.
 func Report(run Run, r *digest.Report, o Options) string {
-	c := palette(o.Color)
-	var b strings.Builder
-	line := func(format string, a ...any) { fmt.Fprintf(&b, format+"\n", a...) }
+	w := &report{c: palette(o.Color)}
+	c := w.c
 	ok := run.Exit == 0
 
-	// header: verdict, command, exit, time, size
-	status := c.green + c.bold + "OK" + c.reset
-	if o.Color {
-		status = c.green + c.bold + "✓ ok" + c.reset
+	// tiny output says it best itself: verdict line plus the output
+	if !o.Raw && len(r.Meaningful) <= tinyOutput && run.Exit >= 0 && len(run.Lines) <= tinyOutput+4 {
+		w.header(run, ok)
+		for _, l := range r.Meaningful {
+			w.line("  %s", clip(l))
+		}
+		return w.b.String()
 	}
+
+	w.header(run, ok)
+	if o.Raw {
+		for _, l := range run.Lines {
+			w.line("%s", clip(l))
+		}
+		w.footer(run)
+		return w.b.String()
+	}
+	if r.HasTests {
+		w.line("tests: %s", testCounts(r, c))
+	}
+
+	// output nothing recognised, and short: show it whole
+	if !r.Structured && len(r.Meaningful) <= shortOutput {
+		w.line("")
+		for _, l := range r.Meaningful {
+			w.line("  %s", clip(l))
+		}
+		return w.b.String()
+	}
+
+	budget := max(o.Budget, 10)
+	w.items(r, budget, ok)
+
+	for _, n := range r.Notes {
+		w.line("%s%s%s", c.faint, clip(n), c.reset)
+	}
+	explained := len(r.Errors)+len(r.Failures) > 0 && !r.Generic
+	switch {
+	case !ok && !explained:
+		// nothing structured explains the failure: the end of the output usually does
+		w.line("\n%slast lines:%s", c.faint, c.reset)
+		for _, l := range lastN(r.Tail, max(3, budget-w.lines-3)) {
+			w.line("  %s", clip(l))
+		}
+	case ok && !r.HasTests && len(r.Errors)+len(r.Warnings) == 0:
+		// a successful command that isn't a test run: its output may be the point
+		show := r.Meaningful
+		label := "output:"
+		if len(show) > budget/2 {
+			show, label = lastN(show, 10), fmt.Sprintf("last lines (of %d):", len(r.Meaningful))
+		}
+		if len(show) > 0 {
+			w.line("\n%s%s%s", c.faint, label, c.reset)
+			for _, l := range show {
+				w.line("  %s", clip(l))
+			}
+		}
+	}
+	w.footer(run)
+	return w.b.String()
+}
+
+func lastN(ls []string, n int) []string {
+	if len(ls) > n {
+		return ls[len(ls)-n:]
+	}
+	return ls
+}
+
+func (w *report) header(run Run, ok bool) {
+	c := w.c
+	status := c.green + c.bold + "OK" + c.reset
 	if !ok {
 		status = c.red + c.bold + "FAILED" + c.reset
-		if o.Color {
+	}
+	if w.c.bold != "" {
+		if ok {
+			status = c.green + c.bold + "✓ ok" + c.reset
+		} else {
 			status = c.red + c.bold + "✗ failed" + c.reset
 		}
 	}
-	meta := []string{}
+	var meta []string
 	if !ok {
-		e := "exit " + strconv.Itoa(run.Exit)
-		if run.Signal != "" {
-			e = "killed by " + run.Signal
+		if run.Signal != 0 {
+			meta = append(meta, "killed by "+signalName(run.Signal))
+		} else {
+			meta = append(meta, "exit "+strconv.Itoa(run.Exit))
 		}
-		meta = append(meta, e)
 	}
 	meta = append(meta, fmtDuration(run.Duration), plural(len(run.Lines), "line")+" of output")
-	line("%s  %s%s%s  %s(%s)%s", status, c.bold, run.Command, c.reset, c.faint, strings.Join(meta, ", "), c.reset)
+	w.line("%s  %s%s%s  %s(%s)%s", status, c.bold, Command(run.Argv), c.reset, c.faint, strings.Join(meta, ", "), c.reset)
+}
 
-	if o.Raw {
-		for _, l := range run.Lines {
-			line("%s", l)
-		}
-		footer(&b, run, c)
-		return b.String()
+func (w *report) footer(run Run) {
+	if run.LogPath != "" {
+		w.line("\n%sfull log: %s%s", w.c.faint, run.LogPath, w.c.reset)
 	}
+}
 
-	// test counts
-	failed := max(r.Tests.Failed, len(r.Failures))
-	if r.HasTests {
-		var parts []string
-		pkgs := r.Tests.PkgOK + r.Tests.PkgFailed
-		if r.Tests.Passed > 0 || (failed == 0 && pkgs == 0) { // go test without -v only counts packages
-			parts = append(parts, c.green+strconv.Itoa(r.Tests.Passed)+" passed"+c.reset)
+func testCounts(r *digest.Report, c pal) string {
+	t := r.Tests
+	failed := max(t.Failed, len(r.Failures))
+	pkgs := t.PkgOK + t.PkgFailed
+	var parts []string
+	add := func(n int, word, color string) {
+		if n > 0 {
+			parts = append(parts, color+strconv.Itoa(n)+" "+word+c.reset)
 		}
-		if failed > 0 {
-			parts = append(parts, c.red+strconv.Itoa(failed)+" failed"+c.reset)
-		}
-		if r.Tests.Skipped > 0 {
-			parts = append(parts, c.yellow+strconv.Itoa(r.Tests.Skipped)+" skipped"+c.reset)
-		}
-		if r.Tests.PkgOK+r.Tests.PkgFailed > 0 {
-			pk := fmt.Sprintf("%d/%d packages ok", r.Tests.PkgOK, r.Tests.PkgOK+r.Tests.PkgFailed)
-			parts = append(parts, c.faint+pk+c.reset)
-		}
-		line("tests: %s", strings.Join(parts, ", "))
 	}
-
-	// short output that nothing structured explains: show it whole
-	meaningful := meaningfulLines(run.Lines)
-	structured := len(r.Errors)+len(r.Failures)+len(r.Warnings) > 0 || r.HasTests
-	if !structured && len(meaningful) <= shortOutput {
-		if len(meaningful) > 0 {
-			line("")
-			for _, l := range meaningful {
-				line("  %s", l)
-			}
-		}
-		footer(&b, run, c)
-		return b.String()
+	switch {
+	case t.Passed > 0:
+		add(t.Passed, "passed", c.green)
+	case failed == 0 && t.Errors == 0 && pkgs == 0:
+		parts = append(parts, c.green+"0 passed"+c.reset)
 	}
-
-	budget := o.Budget
-	used := strings.Count(b.String(), "\n") + 2
-	more := 0
-	emit := func(it *digest.Item, color string, withBody bool) bool {
-		need := 1
-		if withBody {
-			need += len(it.Body)
+	add(failed, "failed", c.red)
+	add(t.Errors, plural0(t.Errors, "error"), c.red)
+	add(t.Skipped, "skipped", c.yellow)
+	add(t.XFailed, "xfailed", c.yellow)
+	if pkgs > 0 {
+		pk := fmt.Sprintf("%d/%d packages ok", t.PkgOK, pkgs)
+		if t.Passed == 0 && failed == 0 {
+			pk += " (use -v for per-test counts)"
 		}
-		if used+need > budget && used > 4 {
-			more++
-			return false
-		}
-		head := "  "
-		if it.Loc != "" {
-			head += c.cyan + it.Loc + c.reset + "  "
-		}
-		title := it.Title
-		if it.Kind == "fail" && it.Loc != "" {
-			head = "  " + c.bold + it.Title + c.reset + "  " + c.cyan + it.Loc + c.reset
-			title = ""
-		} else {
-			title = color + title + c.reset
-		}
-		if it.Count > 1 {
-			title += c.faint + fmt.Sprintf(" ×%d", it.Count) + c.reset
-		}
-		line("%s%s", head, title)
-		used++
-		if withBody {
-			for _, l := range it.Body {
-				line("    %s%s%s", c.faint, l, c.reset)
-				used++
-			}
-		}
-		return true
+		parts = append(parts, c.faint+pk+c.reset)
 	}
+	return strings.Join(parts, ", ")
+}
 
+// items prints errors, failed tests and warnings within the budget: every
+// error and failure gets its line before any code frame or warning does.
+func (w *report) items(r *digest.Report, budget int, ok bool) {
+	c := w.c
+	important := append(append([]*digest.Item{}, r.Errors...), r.Failures...)
+	room := budget - w.lines - 4 // header and footer
+	nWarn := len(r.Warnings)
+	sections := 0
 	if len(r.Errors) > 0 {
-		line("\n%s%s:%s", c.red, plural(len(r.Errors), "error"), c.reset)
-		used += 2
-		for _, it := range r.Errors {
-			emit(it, c.red, true)
+		sections++
+	}
+	if len(r.Failures) > 0 {
+		sections++
+	}
+	room -= sections * 2 // section titles and blank lines
+
+	// 1. one line per error / failure, as many as fit (at least one)
+	shown := min(len(important), max(1, room))
+	room -= shown
+	// 2. their bodies, in order, while they fit
+	withBody := map[*digest.Item]bool{}
+	for _, it := range important[:shown] {
+		if len(it.Body) > 0 && len(it.Body) <= room {
+			withBody[it] = true
+			room -= len(it.Body)
+		}
+	}
+	// 3. warnings: one or two lines each, with what's left
+	warnShown := 0
+	if nWarn > 0 && room >= 3 {
+		room -= 2
+		for _, it := range r.Warnings {
+			need := 1
+			if it.Count > 1 {
+				need = 2
+			}
+			if need > room {
+				break
+			}
+			room -= need
+			warnShown++
+		}
+		if ok && warnShown > 0 { // a clean run with a few warnings: show their frames too
+			for _, it := range r.Warnings[:warnShown] {
+				if len(it.Body) > 0 && len(it.Body) <= room {
+					withBody[it] = true
+					room -= len(it.Body)
+				}
+			}
+		}
+	}
+
+	emit := func(it *digest.Item, color string) {
+		var head string
+		switch {
+		case it.Kind == "fail":
+			head = "  " + c.bold + it.Title + c.reset
+			if it.Loc != "" {
+				head += "  " + c.cyan + it.Loc + c.reset
+			}
+		default:
+			head = "  "
+			if it.Loc != "" {
+				head += c.cyan + it.Loc + c.reset + "  "
+			}
+			title := it.Title
+			if it.Count > 1 && it.Norm != "" {
+				title = it.Norm
+			}
+			head += color + title + c.reset
+			if it.Count > 1 {
+				head += c.faint + fmt.Sprintf(" ×%d", it.Count) + c.reset
+			}
+			if names := distinct(it.Names); len(names) > 1 {
+				if len(names) > 8 {
+					names = append(names[:8], fmt.Sprintf("+%d more", len(names)-8))
+				}
+				head += c.faint + ": " + strings.Join(names, ", ") + c.reset
+			}
+		}
+		w.line("%s", clip(head))
+		if withBody[it] {
+			for _, l := range it.Body {
+				w.line("    %s%s%s", c.faint, clip(l), c.reset)
+			}
+		}
+		if len(it.Locs) > 0 {
+			locs, extra := it.Locs, ""
+			if len(locs) > 6 {
+				locs, extra = locs[:6], fmt.Sprintf(" +%d more", len(locs)-6)
+			}
+			w.line("    %salso at %s%s%s", c.faint, strings.Join(locs, ", "), extra, c.reset)
+		}
+	}
+
+	errShown := min(len(r.Errors), shown)
+	failShown := shown - errShown
+	if len(r.Errors) > 0 {
+		w.line("\n%s%s:%s", c.red, plural(total(r.Errors), "error"), c.reset)
+		for _, it := range r.Errors[:errShown] {
+			emit(it, c.red)
+		}
+		if n := len(r.Errors) - errShown; n > 0 {
+			w.line("  %s… and %s not shown (full log below)%s", c.yellow, plural(n, "more error"), c.reset)
 		}
 	}
 	if len(r.Failures) > 0 {
-		line("\n%s%s:%s", c.red, plural(len(r.Failures), "failed test"), c.reset)
-		used += 2
-		for _, it := range r.Failures {
-			emit(it, c.red, true)
+		w.line("\n%s%s:%s", c.red, plural(len(r.Failures), "failed test"), c.reset)
+		for _, it := range r.Failures[:failShown] {
+			emit(it, c.red)
+		}
+		if n := len(r.Failures) - failShown; n > 0 {
+			w.line("  %s… and %s not shown (full log below)%s", c.yellow, plural(n, "more failed test"), c.reset)
 		}
 	}
-	if len(r.Warnings) > 0 {
-		total := 0
-		for _, w := range r.Warnings {
-			total += w.Count
+	if nWarn > 0 {
+		w.line("\n%s%s:%s", c.yellow, plural(total(r.Warnings), "warning"), c.reset)
+		for _, it := range r.Warnings[:warnShown] {
+			emit(it, c.yellow)
 		}
-		line("\n%s%s:%s", c.yellow, plural(total, "warning"), c.reset)
-		used += 2
-		// warnings matter less when something failed: one line each
-		withBody := ok && len(r.Warnings) <= 3
-		for _, it := range r.Warnings {
-			emit(it, c.yellow, withBody)
-			if len(it.Locs) > 0 && used < budget {
-				locs := it.Locs
-				extra := ""
-				if len(locs) > 4 {
-					extra = fmt.Sprintf(" +%d more", len(locs)-4)
-					locs = locs[:4]
-				}
-				line("    %salso at %s%s%s", c.faint, strings.Join(locs, ", "), extra, c.reset)
-				used++
-			}
+		if n := nWarn - warnShown; n > 0 {
+			w.line("  %s… and %d more kinds not shown%s", c.faint, n, c.reset)
 		}
-	}
-	for _, n := range r.Notes {
-		line("%s%s%s", c.faint, n, c.reset)
-	}
-	if more > 0 {
-		line("%s… %d more not shown (budget %d lines): see the full log%s", c.yellow, more, budget, c.reset)
-	}
-
-	// nothing explains the failure: the end of the output usually does
-	explained := len(r.Errors)+len(r.Failures) > 0
-	if (!ok && !explained) || (ok && !r.HasTests && len(r.Tail) > 0) {
-		line("\n%slast lines:%s", c.faint, c.reset)
-		for _, l := range r.Tail {
-			line("  %s", l)
-		}
-	}
-	footer(&b, run, c)
-	return b.String()
-}
-
-func footer(b *strings.Builder, run Run, c pal) {
-	if run.LogPath != "" {
-		fmt.Fprintf(b, "\n%sfull log: %s%s\n", c.faint, pretty(run.LogPath), c.reset)
 	}
 }
 
-func meaningfulLines(lines []string) []string {
+func total(items []*digest.Item) int {
+	n := 0
+	for _, it := range items {
+		n += max(it.Count, 1)
+	}
+	return n
+}
+
+func distinct(ls []string) []string {
+	seen := map[string]bool{}
 	var out []string
-	for _, l := range lines {
-		if strings.TrimSpace(l) != "" {
-			out = append(out, l)
+	for _, s := range ls {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
 		}
 	}
 	return out
+}
+
+// Command renders argv so it can be pasted back into a shell: arguments
+// with spaces or quotes are single-quoted, control characters are escaped,
+// and very long commands are shortened.
+func Command(argv []string) string {
+	parts := make([]string, len(argv))
+	for i, a := range argv {
+		parts[i] = shellQuote(a)
+	}
+	s := strings.Join(parts, " ")
+	if r := []rune(s); len(r) > 160 {
+		s = string(r[:159]) + "…"
+	}
+	return s
+}
+
+func shellQuote(a string) string {
+	if a == "" {
+		return "''"
+	}
+	if strings.IndexFunc(a, func(r rune) bool { return unicode.IsControl(r) }) >= 0 {
+		return "$" + strings.ReplaceAll(strconv.Quote(a), "'", "\\'") // $"…" with escapes, like bash's $'…'
+	}
+	if strings.IndexFunc(a, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("-_./:=@%+,", r))
+	}) < 0 {
+		return a
+	}
+	return "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+}
+
+func signalName(s syscall.Signal) string {
+	names := map[syscall.Signal]string{syscall.SIGHUP: "SIGHUP", syscall.SIGINT: "SIGINT", syscall.SIGQUIT: "SIGQUIT",
+		syscall.SIGILL: "SIGILL", syscall.SIGABRT: "SIGABRT", syscall.SIGFPE: "SIGFPE", syscall.SIGKILL: "SIGKILL",
+		syscall.SIGSEGV: "SIGSEGV", syscall.SIGPIPE: "SIGPIPE", syscall.SIGALRM: "SIGALRM", syscall.SIGTERM: "SIGTERM",
+		syscall.SIGBUS: "SIGBUS"}
+	if n, ok := names[s]; ok {
+		return n
+	}
+	return "signal " + strconv.Itoa(int(s))
 }
 
 func plural(n int, word string) string {
@@ -225,6 +393,13 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return strconv.Itoa(n) + " " + word + "s"
+}
+
+func plural0(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 func fmtDuration(d time.Duration) string {
@@ -235,11 +410,4 @@ func fmtDuration(d time.Duration) string {
 		return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + "s"
 	}
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
-}
-
-func pretty(p string) string {
-	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(p, home+"/") {
-		return "~" + p[len(home):]
-	}
-	return p
 }

@@ -16,7 +16,7 @@ type Result struct {
 	Lines    []string // raw lines (stdout and stderr interleaved as written)
 	Exit     int
 	Duration time.Duration
-	Signal   string // set if the command was killed by a signal
+	Signal   syscall.Signal // non-zero if the command was killed by a signal
 }
 
 // Run starts argv, calls onLine for every line as it arrives, and waits.
@@ -73,7 +73,7 @@ func Run(argv []string, env []string, onLine func(string)) (*Result, error) {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-			res.Signal = ws.Signal().String()
+			res.Signal = ws.Signal()
 			res.Exit = 128 + int(ws.Signal())
 		} else {
 			res.Exit = ee.ExitCode()

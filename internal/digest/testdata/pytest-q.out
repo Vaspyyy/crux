@@ -1,0 +1,28 @@
+.F.xs.E                                                                  [100%]
+==================================== ERRORS ====================================
+___________________________ ERROR at setup of test_f ___________________________
+
+    @pytest.fixture
+>   def broken(): raise RuntimeError("fixture exploded")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RuntimeError: fixture exploded
+
+test_q.py:12: RuntimeError
+=================================== FAILURES ===================================
+____________________________________ test_b ____________________________________
+
+>   def test_b(): assert 1 == 2
+                  ^^^^^^^^^^^^^
+E   assert 1 == 2
+
+test_q.py:3: AssertionError
+=============================== warnings summary ===============================
+test_q.py::test_w
+  /work/pq/test_q.py:10: DeprecationWarning: old api
+    warnings.warn("old api", DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_q.py::test_b - assert 1 == 2
+ERROR test_q.py::test_f - RuntimeError: fixture exploded
+1 failed, 3 passed, 1 skipped, 1 xfailed, 1 warning, 1 error in 0.02s

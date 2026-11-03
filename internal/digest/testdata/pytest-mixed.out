@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.0.2, pluggy-1.6.0
+PySide6 6.12.0 -- Qt runtime 6.12.0 -- Qt compiled 6.12.0
+rootdir: /work/pq
+plugins: cov-7.1.0, qt-4.5.0, platformdirs-4.13.5
+collected 7 items
+
+test_q.py .F.xs.E                                                        [100%]
+
+==================================== ERRORS ====================================
+___________________________ ERROR at setup of test_f ___________________________
+
+    @pytest.fixture
+>   def broken(): raise RuntimeError("fixture exploded")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RuntimeError: fixture exploded
+
+test_q.py:12: RuntimeError
+=================================== FAILURES ===================================
+____________________________________ test_b ____________________________________
+
+>   def test_b(): assert 1 == 2
+                  ^^^^^^^^^^^^^
+E   assert 1 == 2
+
+test_q.py:3: AssertionError
+=============================== warnings summary ===============================
+test_q.py::test_w
+  /work/pq/test_q.py:10: DeprecationWarning: old api
+    warnings.warn("old api", DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_q.py::test_b - assert 1 == 2
+ERROR test_q.py::test_f - RuntimeError: fixture exploded
+==== 1 failed, 3 passed, 1 skipped, 1 xfailed, 1 warning, 1 error in 0.03s =====

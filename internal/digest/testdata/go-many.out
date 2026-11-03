@@ -1,0 +1,12 @@
+# example.com/gmany
+./main.go:4:2: undefined: undefinedThing0
+./main.go:5:2: undefined: undefinedThing1
+./main.go:6:2: undefined: undefinedThing2
+./main.go:7:2: undefined: undefinedThing3
+./main.go:8:2: undefined: undefinedThing4
+./main.go:9:2: undefined: undefinedThing5
+./main.go:10:2: undefined: undefinedThing6
+./main.go:11:2: undefined: undefinedThing7
+./main.go:12:2: undefined: undefinedThing8
+./main.go:13:2: undefined: undefinedThing9
+./main.go:13:2: too many errors
