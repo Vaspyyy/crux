@@ -72,6 +72,8 @@ crux understands the output of cargo and rustc, `go build`, `go test` and `go ve
 
 ## For coding agents
 
+A ready-made Claude Code skill is in [`skill/SKILL.md`](skill/SKILL.md). Install it with `mkdir -p ~/.claude/skills/crux && cp skill/SKILL.md ~/.claude/skills/crux/`.
+
 An agent can use crux without any setup: when its output isn't a terminal, crux prints the plain report. To make it the default, tell the agent in its instructions file (`AGENTS.md`, `CLAUDE.md` or similar), for example:
 
 ```markdown
