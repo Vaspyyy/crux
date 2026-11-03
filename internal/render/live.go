@@ -14,7 +14,9 @@ var (
 	liveFail = regexp.MustCompile(`\.\.\. FAILED$|^\s*--- FAIL: |^FAILED |^FAIL\s+\S`)
 	liveErr  = regexp.MustCompile(`^error(\[E\d+\])?: |:\d+(:\d+)?: (fatal )?error: | - error TS\d+|\): error TS\d+`)
 	liveWarn = regexp.MustCompile(`^warning: |:\d+(:\d+)?: warning: `)
-	livePyOK = regexp.MustCompile(`^\S+\.py ([.FEsxX]+)`)
+	// cargo's own summaries repeat the count of diagnostics already seen
+	liveSummary = regexp.MustCompile(`^(warning|error): .*(generated \d+ warnings?|warnings? emitted|could not compile|test failed, to rerun|aborting due to)`)
+	livePyOK    = regexp.MustCompile(`^\S+\.py ([.FEsxX]+)`)
 )
 
 // Live is a one-line status shown while the command runs (people only).
@@ -49,6 +51,7 @@ func (l *Live) Line(s string) {
 		l.pass++
 	case liveFail.MatchString(s):
 		l.fail++
+	case liveSummary.MatchString(s):
 	case liveErr.MatchString(s):
 		l.errs++
 	case liveWarn.MatchString(s):
@@ -93,10 +96,10 @@ func (l *Live) draw(frame int) {
 		counts = append(counts, fmt.Sprintf("\x1b[31m✗ %d\x1b[0m", l.fail))
 	}
 	if l.errs > 0 {
-		counts = append(counts, fmt.Sprintf("\x1b[31m%d errors\x1b[0m", l.errs))
+		counts = append(counts, "\x1b[31m"+plural(l.errs, "error")+"\x1b[0m")
 	}
 	if l.warns > 0 {
-		counts = append(counts, fmt.Sprintf("\x1b[33m%d warnings\x1b[0m", l.warns))
+		counts = append(counts, "\x1b[33m"+plural(l.warns, "warning")+"\x1b[0m")
 	}
 	last := l.last
 	l.mu.Unlock()

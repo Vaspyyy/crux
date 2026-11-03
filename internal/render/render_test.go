@@ -149,3 +149,20 @@ func TestSecondRoundRendering(t *testing.T) {
 		}
 	})
 }
+
+func TestLiveCountsOnlyRealDiagnostics(t *testing.T) {
+	l := &Live{}
+	for _, s := range []string{
+		"warning: unused variable: `rounding`",
+		"warning: `ledger` (lib) generated 1 warning",
+		"warning: `ledger` (lib test) generated 1 warning (1 duplicate)",
+		"error: test failed, to rerun pass `--lib`",
+		"error[E0308]: mismatched types",
+		"error: could not compile `ledger` (lib) due to 1 previous error; 1 warning emitted",
+	} {
+		l.Line(s)
+	}
+	if l.warns != 1 || l.errs != 1 {
+		t.Errorf("warns=%d errs=%d, want 1 and 1", l.warns, l.errs)
+	}
+}
