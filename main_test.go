@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +40,14 @@ func fields(s string) []string {
 func TestBudgetFlagMustComeLastInAGroup(t *testing.T) {
 	if got := fmt.Sprint(splitShortFlags(fields("-bv 10 echo"))); got != "[-bv 10 echo]" {
 		t.Errorf("got %s", got)
+	}
+}
+
+func TestHelpColorsOnlyWhenAsked(t *testing.T) {
+	if plain := helpText(false); strings.Contains(plain, "\x1b") || !strings.Contains(plain, "--budget N") {
+		t.Errorf("plain help:\n%s", plain)
+	}
+	if colored := helpText(true); !strings.Contains(colored, hSection+"USAGE"+hReset) {
+		t.Errorf("colored help has no colored section titles:\n%s", colored)
 	}
 }
