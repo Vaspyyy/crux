@@ -22,30 +22,6 @@ import (
 
 const version = "0.3.1"
 
-const usage = `crux runs a build, test or lint command and shows only what matters.
-
-usage: crux [flags] <command> [args...]
-
-  crux cargo test
-  crux go test ./...
-  crux npm run build
-  crux -v make            also stream the full output while it runs
-
-flags:
-  -b, --budget N      roughly how many lines the report may use (default 60)
-  -v, --verbose       stream the full output while it runs, then print the report
-  -r, --raw           print the whole cleaned output instead of a digest
-  -A, --agent         plain report without colors or live status (default when not a terminal)
-      --keep-locale   don't switch the command to English messages
-      --no-log        don't keep the full output on disk
-      --log           print the path of the last run's full log in this directory and exit
-  -h, --help          show this help
-      --version       show the version
-
-The exit code is the command's own. Commands run with English messages (LC_ALL=C.UTF-8) unless
---keep-locale is given. Full logs are kept in ` + "~/.local/state/crux/logs" + ` for a week.
-`
-
 type opts struct {
 	budget     int
 	verbose    bool
@@ -73,7 +49,7 @@ func run(args []string) int {
 			argv = args[i+1:]
 			i = len(args)
 		case a == "-h" || a == "--help":
-			fmt.Print(usage)
+			fmt.Print(helpText(wantsColor(os.Stdout)))
 			return 0
 		case a == "--version":
 			fmt.Println("crux", version)
@@ -123,7 +99,7 @@ func run(args []string) int {
 		}
 	}
 	if len(argv) == 0 {
-		fmt.Fprint(os.Stderr, usage)
+		fmt.Fprint(os.Stderr, helpText(wantsColor(os.Stderr)))
 		return 2
 	}
 	if code, msg := checkCommand(argv[0]); code != 0 {
@@ -282,6 +258,11 @@ func goModule(cwd string) (string, string) {
 			return "", ""
 		}
 	}
+}
+
+// wantsColor reports whether text written to f may be colored.
+func wantsColor(f *os.File) bool {
+	return term.IsTerminal(int(f.Fd())) && os.Getenv("NO_COLOR") == ""
 }
 
 func fail(msg string) int {
