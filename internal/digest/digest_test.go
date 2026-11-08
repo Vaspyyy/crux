@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -357,5 +358,49 @@ func TestFailuresNameTheirRunner(t *testing.T) {
 		if strings.Join(got, ", ") != want {
 			t.Errorf("%s: got %q, want %q", name, strings.Join(got, ", "), want)
 		}
+	}
+}
+
+// pytest --tb=no or --tb=line lists failures only in its short summary,
+// where a parametrization may hold spaces and brackets.
+func TestPytestShortSummary(t *testing.T) {
+	lines := []string{
+		"============================= test session starts ==============================",
+		"collected 5 items",
+		"",
+		"tests/test_q.py FFF..                                                    [100%]",
+		"",
+		"=========================== short test summary info ============================",
+		"FAILED tests/test_q.py::test_sp[a b] - assert False",
+		"FAILED tests/test_q.py::test_a",
+		"FAILED tests/test_q.py::test_n[n[1]-x y] - assert [1] == [2]",
+		"========================= 3 failed, 2 passed in 0.01s ==========================",
+	}
+	var got []string
+	r := Digest(lines, 1)
+	for _, f := range r.Failures {
+		got = append(got, f.Title+" | "+strings.Join(f.Body, " "))
+	}
+	want := []string{"tests/test_q.py::test_sp[a b] | assert False", "tests/test_q.py::test_a | ", "tests/test_q.py::test_n[n[1]-x y] | assert [1] == [2]"}
+	if !reflect.DeepEqual(got, want) || r.Tests.Failed != 3 {
+		t.Errorf("failures %q, tests %+v", got, r.Tests)
+	}
+	for _, l := range []string{"FAILED tests/test_q.py::test_a extra", "PASSED tests/test_q.py::test_a", "FAILED "} {
+		if _, _, _, ok := pyShortLine(l); ok {
+			t.Errorf("pyShortLine(%q): ok", l)
+		}
+	}
+}
+
+// The note that suggests --no-fail-fast is left out when it was passed.
+func TestCargoNoFailFastNote(t *testing.T) {
+	lines := []string{"test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s", "", "error: test failed, to rerun pass `--lib`"}
+	if r := Digest(lines, 101); len(r.Notes) != 1 {
+		t.Errorf("notes %q", r.Notes)
+	}
+	CargoNoFailFast = true
+	defer func() { CargoNoFailFast = false }()
+	if r := Digest(lines, 101); len(r.Notes) != 0 {
+		t.Errorf("with --no-fail-fast: notes %q", r.Notes)
 	}
 }

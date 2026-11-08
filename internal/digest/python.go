@@ -14,7 +14,6 @@ var (
 	pyBangRe     = regexp.MustCompile(`^!{3,} (.+?) !{3,}$`)
 	pyTbLineRe   = regexp.MustCompile(`^(\S+\.py):(\d+): (.+)$`)
 	pyStopRe     = regexp.MustCompile(`^stopping after (\d+) failures?$`)
-	pyShortRe    = regexp.MustCompile(`^(FAILED|ERROR) (\S+)(?: - (.*))?$`)
 	pyFinalRe    = regexp.MustCompile(`^=+ (.+?) in [\d.]+s(?: \([^)]*\))? =+$`)
 	pyCountRe    = regexp.MustCompile(`(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)`)
 	pyProgressRe = regexp.MustCompile(`^(\S+\.py )?[.FEsxX]+\s*\[\s*\d+%\]$|^\S+\.py [.FEsxX]+$`)
@@ -125,14 +124,14 @@ func pytestSections(s *state, i int) int {
 		end := i + 1
 		have := len(s.r.Failures)+len(s.r.Errors) > 0
 		for end < len(s.lines) {
-			sm := pyShortRe.FindStringSubmatch(s.lines[end])
-			if sm == nil {
+			word, id, msg, ok := pyShortLine(s.lines[end])
+			if !ok {
 				break
 			}
-			if !have && sm[1] == "FAILED" { // --tb=no/line runs only have this list
-				it := &Item{Kind: "fail", Title: sm[2], Runner: "pytest"}
-				if sm[3] != "" {
-					it.Body = []string{sm[3]}
+			if !have && word == "FAILED" { // --tb=no/line runs only have this list
+				it := &Item{Kind: "fail", Title: id, Runner: "pytest"}
+				if msg != "" {
+					it.Body = []string{msg}
 				}
 				if k := len(s.r.Failures); k < len(s.pyTbLocs) {
 					it.Loc = s.pyTbLocs[k]
@@ -234,6 +233,36 @@ func pytestSummary(s *state, i int) int {
 		}
 	}
 	return i + 1
+}
+
+// pyShortLine reads a line of pytest's short test summary: "FAILED
+// tests/test_x.py::test_p[a b] - assert ...". The node id runs to the
+// first space outside brackets, since a parametrization may hold spaces.
+func pyShortLine(l string) (word, id, msg string, ok bool) {
+	word, rest, _ := strings.Cut(l, " ")
+	if word != "FAILED" && word != "ERROR" {
+		return "", "", "", false
+	}
+	depth, end := 0, len(rest)
+	for i := 0; i < len(rest) && end == len(rest); i++ {
+		switch rest[i] {
+		case '[':
+			depth++
+		case ']':
+			depth = max(depth-1, 0)
+		case ' ':
+			if depth == 0 {
+				end = i
+			}
+		}
+	}
+	id, tail := rest[:end], rest[end:]
+	if tail != "" {
+		if msg, ok = strings.CutPrefix(tail, " - "); !ok {
+			return "", "", "", false
+		}
+	}
+	return word, id, msg, id != ""
 }
 
 // pyTraceback handles a Python traceback: the exception plus the frame
