@@ -58,4 +58,5 @@ crux execs the command directly, with no shell. Verified:
 
 - The full output is in the log printed at the bottom (an absolute path; omitted when the whole output is already shown). It's written while the command runs, so it survives a timeout. `crux --log` prints the path of the latest run started in the current directory, and fails (exit 1, nothing on stdout) if there is none. Logs are kept for a week.
 - `crux -b 150 <cmd>` allows a longer report; `crux -r <cmd>` prints only the whole cleaned output on stdout (no escape codes, progress bars resolved; the verdict line goes to stderr); `crux -v <cmd>` streams the cleaned output while it runs and then prints the report. Short flags combine: `crux -rv …`.
+- `crux --json <cmd>` prints one JSON document instead (Prism's `report.Crux`, https://github.com/Vaspyyy/prism/blob/main/docs/output.md) for scripts and CI. Read the text report yourself: it's shorter and says the same.
 - crux runs the command with an English locale (`LC_ALL=C.UTF-8`) so messages are consistent; `--keep-locale` turns that off.

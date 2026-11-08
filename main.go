@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Vaspyyy/prism/repo"
+	"github.com/Vaspyyy/prism/report"
 	"golang.org/x/term"
 
 	"github.com/Vaspyyy/crux/internal/digest"
@@ -25,20 +27,24 @@ const version = "0.4.0"
 
 type opts struct {
 	budget     int
+	budgetSet  bool // -b was given: it also limits --json
 	verbose    bool
 	raw        bool
 	agent      bool
 	keepLocale bool
 	noLog      bool
+	json       bool
+	args       []string // crux's arguments as given, for the JSON envelope
 }
 
 func main() { os.Exit(run(os.Args[1:])) }
 
 func run(args []string) int {
-	o := opts{budget: 60}
+	o := opts{budget: 60, args: args}
 	var argv []string
 	// flags only before the command: everything after it belongs to the command
 	args = splitShortFlags(args)
+	o.json = jsonWanted(args) // known up front, so a bad flag before it gets JSON too
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if !strings.HasPrefix(a, "-") || a == "-" {
@@ -79,37 +85,50 @@ func run(args []string) int {
 			o.keepLocale = true
 		case a == "--no-log":
 			o.noLog = true
+		case a == "--json":
+			o.json = true
 		case a == "-b" || a == "--budget":
 			if i+1 >= len(args) {
-				return fail("--budget needs a number")
+				return o.usage("--budget needs a number")
 			}
 			i++
 			n, msg := budgetValue(args[i])
 			if msg != "" {
-				return fail(msg)
+				return o.usage(msg)
 			}
-			o.budget = n
+			o.budget, o.budgetSet = n, true
 		case strings.HasPrefix(a, "--budget="):
 			n, msg := budgetValue(strings.TrimPrefix(a, "--budget="))
 			if msg != "" {
-				return fail(msg)
+				return o.usage(msg)
 			}
-			o.budget = n
+			o.budget, o.budgetSet = n, true
 		default:
-			return fail("unknown flag " + a + " (flags go before the command; see crux --help)")
+			return o.usage("unknown flag " + a + " (flags go before the command; see crux --help)")
 		}
 	}
 	if len(argv) == 0 {
+		if o.json {
+			return o.usage("no command given (see crux --help)")
+		}
 		fmt.Fprint(os.Stderr, helpText(wantsColor(os.Stderr)))
 		return 2
 	}
+	if o.json && o.raw {
+		return o.usage("--raw and --json both decide what stdout gets: use one of them")
+	}
 	if code, msg := checkCommand(argv[0]); code != 0 {
-		fmt.Fprintf(os.Stderr, "crux: %s: %s\n", argv[0], msg)
-		return code
+		return o.fail(code, report.CodeFailed, argv[0]+": "+msg)
 	}
 
 	tty := term.IsTerminal(int(os.Stdout.Fd()))
-	human := tty && !o.agent
+	human := tty && !o.agent && !o.json
+	// -v streams the output to stdout, or with --json to stderr (stdout is
+	// the JSON); as the command wrote it to a person's terminal, else cleaned
+	stream, streamRaw := os.Stdout, human
+	if o.json {
+		stream, streamRaw = os.Stderr, term.IsTerminal(int(os.Stderr.Fd())) && !o.agent
+	}
 	color := human && os.Getenv("NO_COLOR") == ""
 	width := 100
 	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
@@ -141,13 +160,13 @@ func run(args []string) int {
 			log.Line(clean)
 		}
 		switch {
-		case o.verbose && human:
-			os.Stdout.WriteString(raw)
+		case o.verbose && streamRaw:
+			stream.WriteString(raw)
 			if !strings.HasSuffix(raw, "\n") {
-				os.Stdout.WriteString("\n")
+				stream.WriteString("\n")
 			}
 		case o.verbose:
-			fmt.Println(clean) // agents get the cleaned stream
+			fmt.Fprintln(stream, clean) // agents get the cleaned stream
 		case live != nil:
 			live.Line(clean)
 		}
@@ -156,8 +175,7 @@ func run(args []string) int {
 		live.Stop()
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "crux:", err)
-		return 1
+		return o.fail(1, report.CodeFailed, err.Error())
 	}
 	logPath := ""
 	if log != nil {
@@ -169,15 +187,66 @@ func run(args []string) int {
 	digest.CheckFiles = true
 	digest.GoModule, digest.GoModuleDir = goModule(cwd)
 	r := digest.Digest(lines, res.Exit)
+	rr := render.Run{Argv: argv, Exit: res.Exit, Signal: res.Signal, Duration: res.Duration, LogPath: logPath, Lines: lines}
+	resolver := refs.New(cwd)
+	if o.json {
+		e := report.New("crux", version, o.args, repoOr(resolver.Repo(), cwd))
+		e.Result, e.Truncated = result(rr, r, resolver, o)
+		report.Write(os.Stdout, e)
+		return res.Exit
+	}
 	if o.verbose {
 		fmt.Println()
 	}
-	rr := render.Run{Argv: argv, Exit: res.Exit, Signal: res.Signal, Duration: res.Duration, LogPath: logPath, Lines: lines}
 	if o.raw { // stdout is the cleaned output and nothing else
 		fmt.Fprint(os.Stderr, render.Header(rr, color && term.IsTerminal(int(os.Stderr.Fd()))))
 	}
-	fmt.Print(render.Report(rr, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: refs.New(cwd).Lines}))
+	fmt.Print(render.Report(rr, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: resolver.Lines}))
 	return res.Exit
+}
+
+// usage reports a bad crux flag (exit 2).
+func (o *opts) usage(msg string) int { return o.fail(2, report.CodeUsage, msg) }
+
+// fail reports why crux couldn't run the command and returns exit: as
+// "crux: msg" on stderr, or with --json as an envelope on stdout and
+// nothing on stderr, so even a merged stream is one JSON document.
+func (o *opts) fail(exit int, code, msg string) int {
+	if !o.json {
+		fmt.Fprintln(os.Stderr, "crux:", msg)
+		return exit
+	}
+	cwd, _ := os.Getwd()
+	info, _ := repo.Detect(cwd)
+	e := report.New("crux", version, o.args, repoOr(info, cwd))
+	e.Fail(code, msg)
+	report.Write(os.Stdout, e)
+	return exit
+}
+
+// repoOr is the repository for the envelope: info, or when it couldn't be
+// read, the working directory.
+func repoOr(info *repo.Info, cwd string) *repo.Info {
+	if info == nil {
+		return &repo.Info{Root: cwd}
+	}
+	return info
+}
+
+// jsonWanted reports whether --json is among crux's own flags (args split
+// by splitShortFlags), which come before the command.
+func jsonWanted(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--json":
+			return true
+		case a == "--" || a == "-" || !strings.HasPrefix(a, "-"):
+			return false
+		case a == "-b" || a == "--budget":
+			i++ // its value
+		}
+	}
+	return false
 }
 
 // splitShortFlags turns "-rv" into "-r", "-v" (before the command only).
@@ -264,11 +333,6 @@ func goModule(cwd string) (string, string) {
 // wantsColor reports whether text written to f may be colored.
 func wantsColor(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd())) && os.Getenv("NO_COLOR") == ""
-}
-
-func fail(msg string) int {
-	fmt.Fprintln(os.Stderr, "crux:", msg)
-	return 2
 }
 
 func shorten(s string, n int) string {

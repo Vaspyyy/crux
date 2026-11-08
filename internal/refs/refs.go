@@ -11,12 +11,15 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Vaspyyy/prism/outline"
 	"github.com/Vaspyyy/prism/ref"
 	"github.com/Vaspyyy/prism/repo"
+	"github.com/Vaspyyy/prism/report"
 
 	"github.com/Vaspyyy/crux/internal/digest"
 )
@@ -28,7 +31,7 @@ const (
 
 // Resolver finds the refs for a report's items. It runs nothing up front:
 // the repository is detected and each file parsed (once) only when an item
-// that is shown needs it.
+// needs it (the text report asks only for the items it shows).
 type Resolver struct {
 	cwd     string     // item locations are relative to it
 	repo    *repo.Info // nil until needed
@@ -63,7 +66,7 @@ func (r *Resolver) Lines(it *digest.Item) []string {
 	if it.Kind != "error" && it.Kind != "fail" {
 		return nil
 	}
-	in, located := r.in(it)
+	in, located := r.in(it.Loc, it.Missing)
 	test := r.test(it)
 	switch {
 	case in != "" && (test == "" || test == in):
@@ -79,15 +82,81 @@ func (r *Resolver) Lines(it *digest.Item) []string {
 	return nil
 }
 
-// in returns the ref of the innermost symbol containing the item's
-// location. located reports whether the item has a file:line location at
-// all (go test without one points at the package directory).
-func (r *Resolver) in(it *digest.Item) (in string, located bool) {
-	loc := ref.Parse(it.Loc, nil)
+// Refs returns an error's or failure's refs without the text's rules for
+// which to print: in, the innermost symbol containing its location, and
+// test, a failed test's own definition. Each is "" when unknown; warnings
+// get neither.
+func (r *Resolver) Refs(it *digest.Item) (in, test string) {
+	if it.Kind != "error" && it.Kind != "fail" {
+		return "", ""
+	}
+	in, _ = r.in(it.Loc, it.Missing)
+	return in, r.test(it)
+}
+
+// In returns the ref of the innermost symbol containing a location (one of
+// an item's folded locations), or "".
+func (r *Resolver) In(loc string, missing bool) string {
+	in, _ := r.in(loc, missing)
+	return in
+}
+
+// Repo returns the repository the working directory is in (outside git:
+// the directory itself), or nil when it couldn't be read.
+func (r *Resolver) Repo() *repo.Info { return r.repoInfo() }
+
+// locRe takes ":line[:col]" off the end of a location, so its path may
+// contain ':'.
+var locRe = regexp.MustCompile(`^(.+?):([0-9]+)(?::([0-9]+))?$`)
+
+// Location turns a location as the report has it (relative to the working
+// directory, or as the tool printed it) into a Prism location: its path
+// repo-relative inside the repository and absolute outside it. A file that
+// doesn't exist ("<stdin>", or missing) keeps the path as reported. nil
+// when loc has no line (go test points some failures at a package
+// directory). In is left for the caller.
+func (r *Resolver) Location(loc string, missing bool) *report.Location {
+	m := locRe.FindStringSubmatch(loc)
+	if m == nil {
+		return nil
+	}
+	line, _ := strconv.Atoi(m[2])
+	col, _ := strconv.Atoi(m[3])
+	if line < 1 {
+		return nil
+	}
+	l := &report.Location{Path: m[1], Line: line, Col: col}
+	if !missing {
+		l.Path = r.Path(m[1], false)
+	}
+	return l
+}
+
+// Path turns a file's (or with dir, a directory's) path from the report
+// into the form JSON has: repo-relative inside the repository, absolute
+// outside it, and as reported when there's no such file or directory.
+func (r *Resolver) Path(p string, dir bool) string {
+	abs := r.abs(p)
+	if st, err := os.Stat(abs); err != nil || st.IsDir() != dir {
+		return p
+	}
+	if info := r.repoInfo(); info != nil {
+		if rel, ok := info.Rel(abs); ok {
+			return rel
+		}
+	}
+	return abs
+}
+
+// in returns the ref of the innermost symbol containing a location.
+// located reports whether it is a file:line location at all (go test
+// points failures without one at the package directory).
+func (r *Resolver) in(at string, missing bool) (in string, located bool) {
+	loc := ref.Parse(at, nil)
 	if !loc.IsLocation() {
 		return "", false
 	}
-	if it.Missing {
+	if missing {
 		return "", true
 	}
 	f := r.file(loc.Path)

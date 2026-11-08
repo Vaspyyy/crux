@@ -249,6 +249,7 @@ func goSummary(s *state, i int) int {
 	case goRunRe.MatchString(l):
 		s.tool("go test")
 		s.goRun = goRunRe.FindStringSubmatch(l)[2]
+		s.goVerbose = true
 	case s.tools["go test"] && strings.HasPrefix(l, "    ") && goLogLocRe.MatchString(l):
 		// t.Log / t.Error output while a test runs (-v)
 		if s.goRun != "" {

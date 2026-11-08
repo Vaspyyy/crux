@@ -42,7 +42,7 @@ type Tests struct {
 	XPassed                 int  // pytest: expected to fail but passed
 	NoneRan                 bool // the tool said no tests ran
 	PkgNoRun                int  // go test packages where no test matched (-run)
-	Unknown                 bool // go test without -v: only packages are known
+	Unknown                 bool // go test without -v: only packages are known, not per-test counts
 }
 
 func (t *Tests) any() bool {
@@ -91,6 +91,7 @@ type state struct {
 	goLogs     map[string][]string // go test -v: log lines per test
 	goPending  []*Item             // go failures waiting for their "FAIL pkg" line
 	goPanicked string              // the test whose panic ended the current package
+	goVerbose  bool                // go test -v: "=== RUN" lines were seen
 	pyTbLocs   []string            // pytest --tb=line: one location per failure, in order
 	roots      []string            // directories make entered: tools' paths may be relative to them
 }
@@ -145,6 +146,9 @@ func Digest(lines []string, exit int) *Report {
 			i++
 		}
 	}
+	// go test without -v prints neither "=== RUN" nor passing tests
+	t := &r.Tests
+	t.Unknown = s.tools["go test"] && !s.goVerbose && t.PkgOK+t.PkgFailed > t.PkgNoRun
 	r.Errors = foldRepeated(fold(r.Errors))
 	r.Warnings = foldWarnings(r.Warnings)
 	if s.tools["cargo test"] { // cargo prints failures in completion order: make it stable

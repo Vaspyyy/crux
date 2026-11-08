@@ -314,6 +314,13 @@ func TestFinalRoundRegressions(t *testing.T) {
 			}
 		})
 	}
+	t.Run("go test without -v reports no per-test counts", func(t *testing.T) {
+		for name, want := range map[string]bool{"go-test.out": true, "go-subtests.out": false, "go-norun.out": false} {
+			if r := Digest(load(t, name), 1); r.Tests.Unknown != want {
+				t.Errorf("%s: unknown = %v, want %v", name, r.Tests.Unknown, want)
+			}
+		}
+	})
 	t.Run("zero tests", func(t *testing.T) {
 		if r := Digest(load(t, "pytest-none.out"), 5); !r.HasTests || !r.Tests.NoneRan {
 			t.Errorf("tests = %+v", r.Tests)

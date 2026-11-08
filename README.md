@@ -44,6 +44,7 @@ Flags go before the command; everything after the command's name belongs to the 
 | `-v`, `--verbose` | Stream the output while the command runs, then print the report. |
 | `-r`, `--raw` | Print the whole output, cleaned of escape codes and progress bars, instead of a report. The verdict line goes to stderr. |
 | `-A`, `--agent` | Plain report without colors or live status. This is the default when stdout isn't a terminal. |
+| `--json` | Print one JSON document instead of the report (see [JSON](#json)). |
 | `--keep-locale` | Don't switch the command to English messages. |
 | `--no-log` | Don't keep the full output on disk. |
 | `--log` | Print the path of the latest log from the current directory and exit. |
@@ -90,6 +91,14 @@ glint, seek, recap and crux name files, symbols and locations the same way, so a
 - `main.go:run@b681ef1`: a symbol as it was in a commit; `lib.cpp:parse#2`: the second of two definitions with the same name
 
 Paths are relative to the repository root. The format is specified in [Prism](https://github.com/Vaspyyy/prism/blob/main/docs/refs.md).
+
+## JSON
+
+`crux --json <command>` runs the command as usual and prints one JSON document instead of the report, for CI scripts and other programs: the exit code, test counts, every error, failed test and warning (location, `in` and `test` refs, explanation, folded locations), the notes and the log's path. Its shape is Prism's `report.Crux` inside the envelope glint, seek and recap print too, described in [Prism's output format](https://github.com/Vaspyyy/prism/blob/main/docs/output.md). The text report stays the default, and it's what agents should read: it's much shorter.
+
+- Paths are relative to the repository root (the text's are relative to the working directory), absolute outside the repository, and as the tool printed them when the file doesn't exist.
+- It lists everything (up to 10,000 entries per list), not only what the budget shows. With an explicit `-b` it lists what the text report would. `truncated` says how much a limit left out.
+- The exit code is still the command's own, and nothing else is printed, so even stdout and stderr merged are one JSON document. `-v` streams the output to stderr. A command that can't be started gives an `error` with code `failed` (exit 127 or 126), and bad flags, or `-r` with `--json`, give `usage` (exit 2).
 
 ## Recognised tools
 
