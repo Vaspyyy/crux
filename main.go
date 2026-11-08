@@ -23,7 +23,7 @@ import (
 	"github.com/Vaspyyy/crux/internal/runner"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 type opts struct {
 	budget     int
