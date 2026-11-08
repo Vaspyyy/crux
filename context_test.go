@@ -196,15 +196,17 @@ func TestContextAcceptance(t *testing.T) {
 	cmd := []string{"go", "test", "-run", "^TestList$", "./internal/files/"}
 
 	// The failure is in TestList, which didn't change: no mark on it. The
-	// change to List, which TestList mentions, is the suggestion.
+	// rerun of TestList comes first, then the change to List, which TestList
+	// mentions, from context.
 	code, on := text(t, cmd...)
 	if code != 1 || !strings.HasPrefix(on, "context: 1 changed symbol vs HEAD\nFAILED  go test -run '^TestList$' ./internal/files/  (exit 1, ") ||
 		!strings.Contains(on, "\n  TestList  internal/files/files_test.go:12\n    in "+testRef+"\n    List = [a b], want [a b c]\n") {
 		t.Errorf("exit %d, report:\n%s", code, on)
 	}
 	wantNext := []string{
-		"next: recap --show " + listRef + "    the uncommitted change to List, which TestList mentions",
-		"next: seek " + testRef + "   the failed test's definition",
+		"next: crux go test -run '^TestList$' ./internal/files/   reruns the 1 failed test",
+		"next: recap --show " + listRef + "          the uncommitted change to List, which TestList mentions",
+		"next: seek " + testRef + "         the failed test's definition",
 	}
 	if got := nextOf(on); !reflect.DeepEqual(got, wantNext) {
 		t.Errorf("next lines %q, want %q", got, wantNext)
@@ -228,12 +230,13 @@ func TestContextAcceptance(t *testing.T) {
 	if f.TestMarks != nil {
 		t.Errorf("test marks %q", f.TestMarks)
 	}
-	if len(d.Next) != 2 || d.Next[0].Cmd != "recap --show "+listRef || d.Next[1].Cmd != "seek "+testRef {
+	if len(d.Next) != 3 || d.Next[0].Cmd != "crux go test -run '^TestList$' ./internal/files/" || d.Next[1].Cmd != "recap --show "+listRef || d.Next[2].Cmd != "seek "+testRef {
 		t.Errorf("next %+v", d.Next)
 	}
 
 	// Without context: the same report minus the context: line and the
-	// suggestion from context, and nothing recorded.
+	// suggestion from context (the rerun and seek stay), and nothing
+	// recorded.
 	if err := os.RemoveAll(filepath.Join(root, ".git", "prism")); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +245,11 @@ func TestContextAcceptance(t *testing.T) {
 		t.Errorf("--no-context:\n%s\nwant the report with context minus context:\n%s", got, want)
 	}
 	dOff, cOff := jsonRun(t, append([]string{"--no-context"}, cmd...)...)
-	if dOff.Context != nil || !reflect.DeepEqual(dOff.Next, d.Next[1:]) || !reflect.DeepEqual(sameRun(cOff), sameRun(unmarked(c))) {
+	wantOff := d.Next // the rerun and seek
+	if len(d.Next) == 3 {
+		wantOff = []report.Next{d.Next[0], d.Next[2]}
+	}
+	if dOff.Context != nil || !reflect.DeepEqual(dOff.Next, wantOff) || !reflect.DeepEqual(sameRun(cOff), sameRun(unmarked(c))) {
 		t.Errorf("--json --no-context: context %+v, next %+v, result %+v", dOff.Context, dOff.Next, cOff)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git", "prism")); !os.IsNotExist(err) {

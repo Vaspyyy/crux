@@ -215,20 +215,23 @@ func run(args []string) int {
 			st.Store.SetLastRun("crux", lastRun(argv, res.Exit, r, resolver))
 		}
 	}()
-	var plain []report.Next
+	// next: lines that don't depend on context: the rerun of the failed
+	// tests first, then seek for a failed test's definition
+	var rerun, plain []report.Next
 	if !o.raw {
+		rerun = rerunNext(argv, cwd, r, resolver)
 		plain = plainNext(r, resolver)
 	}
-	room := min(maxContextNext, report.MaxNext-len(plain))
+	room := min(maxContextNext, report.MaxNext-len(rerun)-len(plain))
 	// next: lines that don't depend on context come out of the budget;
 	// the context: line and context's suggestions come on top, so turning
 	// context on never takes room from errors, failures or warnings
-	ropts := render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: markedLines(resolver, st), Shown: shown(resolver, st), Reserve: len(plain)}
+	ropts := render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: markedLines(resolver, st), Shown: shown(resolver, st), Reserve: len(rerun) + len(plain)}
 	if o.json {
 		e := report.New("crux", version, o.args, repoOr(resolver.Repo(), cwd))
 		e.Result, e.Truncated = result(rr, r, resolver, o, st, ropts.Reserve)
 		resolver.Limit(refsAfterReport)
-		e.Next = append(append(e.Next, contextNext(r, resolver, st, room)...), plain...)
+		e.Next = append(append(append(e.Next, rerun...), contextNext(r, resolver, st, room)...), plain...)
 		e.Context = st.Context()
 		report.Write(os.Stdout, e)
 		return res.Exit
@@ -244,7 +247,7 @@ func run(args []string) int {
 	}
 	body := render.Report(rr, r, ropts) // shows the marks the context: line names
 	resolver.Limit(refsAfterReport)
-	next := append(contextNext(r, resolver, st, room), plain...)
+	next := append(append(rerun, contextNext(r, resolver, st, room)...), plain...)
 	fmt.Print(contextLine(st.Line(), color) + body + nextLines(next, color))
 	return res.Exit
 }
