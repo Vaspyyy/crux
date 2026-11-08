@@ -156,7 +156,8 @@ func TestJSONGoTest(t *testing.T) {
 	if d.Repo.Root != proj || !d.Repo.Git || d.Truncated != nil {
 		t.Errorf("repo %+v, truncated %v", d.Repo, d.Truncated)
 	}
-	if c.Tests == nil || c.Tests.Failed != 3 || c.Tests.PkgFailed != 1 || len(c.Failures) != 3 {
+	// no -v: go test reported failures, but not the tests that passed
+	if c.Tests == nil || c.Tests.Failed != 3 || c.Tests.PkgFailed != 1 || !c.Tests.CountsUnknown || len(c.Failures) != 3 {
 		t.Errorf("tests %+v, %d failures", c.Tests, len(c.Failures))
 	}
 	if !reflect.DeepEqual(c.Tools, []string{"go test"}) || c.Command[0] != "sh" || len(c.Tail) != 0 {
@@ -170,8 +171,8 @@ func TestJSONGoTest(t *testing.T) {
 	}
 	// no line, only the package directory: no loc, and test names it
 	none := find(c.Failures, "TestNoMessage")
-	if none.Loc != nil || none.Test != "calc/calc_test.go:TestNoMessage" {
-		t.Errorf("TestNoMessage: %s, test %q", loc(none.Loc), none.Test)
+	if none.Loc != nil || none.Pkg != "calc" || none.Test != "calc/calc_test.go:TestNoMessage" || add.Pkg != "" {
+		t.Errorf("TestNoMessage: %s, pkg %q, test %q", loc(none.Loc), none.Pkg, none.Test)
 	}
 	if !strings.HasPrefix(c.Log, os.Getenv("XDG_STATE_HOME")) {
 		t.Errorf("log %q", c.Log)
@@ -211,8 +212,13 @@ func TestJSONLocations(t *testing.T) {
 		loc(folded.Loc) != `lib.cpp:4:5 in "lib.cpp:parse#1"` || !reflect.DeepEqual(locs, want) {
 		t.Errorf("folded: count %d, %s, locs %q", folded.Count, loc(folded.Loc), locs)
 	}
+	for _, e := range c.Errors {
+		if want := e.Title == "a file that isn't there"; e.Missing != want {
+			t.Errorf("%s: missing %v", e.Title, e.Missing)
+		}
+	}
 	if len(c.Warnings) != 1 || c.Warnings[0].Count != 2 || c.Warnings[0].Title != "unused variable [-Wunused-variable]" ||
-		c.Warnings[0].Loc.In != "" || len(c.Warnings[0].Locs) != 1 {
+		!reflect.DeepEqual(c.Warnings[0].Names, []string{"a", "b"}) || c.Warnings[0].Loc.In != "" || len(c.Warnings[0].Locs) != 1 {
 		t.Errorf("warnings: %+v", c.Warnings)
 	}
 }
@@ -271,6 +277,18 @@ func TestJSONFailures(t *testing.T) {
 		if code != c.exit || d.Error == nil || d.Error.Code != c.code || stderr != "" {
 			t.Errorf("%q: exit %d, error %+v, stderr %q", c.args, code, d.Error, stderr)
 		}
+	}
+}
+
+func TestJSONSignal(t *testing.T) {
+	project(t, ".")
+	code, out, _ := capture(t, "--json", "--no-log", "sh", "-c", "kill -KILL $$")
+	var c report.Crux
+	if err := json.Unmarshal(check(t, out).Result, &c); err != nil {
+		t.Fatal(err)
+	}
+	if code != 137 || c.Exit != 137 || c.Signal != "SIGKILL" {
+		t.Errorf("exit %d, result %d, signal %q", code, c.Exit, c.Signal)
 	}
 }
 

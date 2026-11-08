@@ -194,7 +194,7 @@ func (w *report) header(run Run, ok bool) {
 	var meta []string
 	if !ok {
 		if run.Signal != 0 {
-			meta = append(meta, "killed by "+signalName(run.Signal))
+			meta = append(meta, "killed by "+SignalName(run.Signal))
 		} else {
 			meta = append(meta, "exit "+strconv.Itoa(run.Exit))
 		}
@@ -556,7 +556,8 @@ func ansiCQuote(a string) string {
 	return b.String()
 }
 
-func signalName(s syscall.Signal) string {
+// SignalName is a signal's name ("SIGKILL"), or "signal N" for others.
+func SignalName(s syscall.Signal) string {
 	names := map[syscall.Signal]string{syscall.SIGHUP: "SIGHUP", syscall.SIGINT: "SIGINT", syscall.SIGQUIT: "SIGQUIT",
 		syscall.SIGILL: "SIGILL", syscall.SIGABRT: "SIGABRT", syscall.SIGFPE: "SIGFPE", syscall.SIGKILL: "SIGKILL",
 		syscall.SIGSEGV: "SIGSEGV", syscall.SIGPIPE: "SIGPIPE", syscall.SIGALRM: "SIGALRM", syscall.SIGTERM: "SIGTERM",

@@ -126,20 +126,26 @@ func (r *Resolver) Location(loc string, missing bool) *report.Location {
 		return nil
 	}
 	l := &report.Location{Path: m[1], Line: line, Col: col}
-	if missing {
-		return l
-	}
-	abs := r.abs(m[1])
-	if st, err := os.Stat(abs); err != nil || st.IsDir() {
-		return l
-	}
-	l.Path = abs
-	if info := r.repoInfo(); info != nil {
-		if rel, ok := info.Rel(abs); ok {
-			l.Path = rel
-		}
+	if !missing {
+		l.Path = r.Path(m[1], false)
 	}
 	return l
+}
+
+// Path turns a file's (or with dir, a directory's) path from the report
+// into the form JSON has: repo-relative inside the repository, absolute
+// outside it, and as reported when there's no such file or directory.
+func (r *Resolver) Path(p string, dir bool) string {
+	abs := r.abs(p)
+	if st, err := os.Stat(abs); err != nil || st.IsDir() != dir {
+		return p
+	}
+	if info := r.repoInfo(); info != nil {
+		if rel, ok := info.Rel(abs); ok {
+			return rel
+		}
+	}
+	return abs
 }
 
 // in returns the ref of the innermost symbol containing a location.

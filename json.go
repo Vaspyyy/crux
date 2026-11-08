@@ -24,6 +24,9 @@ func result(run render.Run, r *digest.Report, rs *refs.Resolver, o opts) (*repor
 		Lines:      r.Lines,
 		Log:        run.LogPath,
 	}
+	if run.Signal != 0 {
+		c.Signal = render.SignalName(run.Signal)
+	}
 	if r.HasTests {
 		c.Tests = tests(r)
 	}
@@ -50,7 +53,8 @@ func tests(r *digest.Report) *report.CruxTests {
 	return &report.CruxTests{
 		Passed: t.Passed, Failed: failed, Skipped: t.Skipped,
 		XFailed: t.XFailed, XPassed: t.XPassed, Errors: t.Errors,
-		PkgOK: t.PkgOK, PkgFailed: t.PkgFailed, PkgNoTests: t.PkgNoTests,
+		PkgOK: t.PkgOK, PkgFailed: t.PkgFailed, PkgNoTests: t.PkgNoTests, PkgNoRun: t.PkgNoRun,
+		CountsUnknown: t.Unknown,
 		// whenever the text says "no tests ran": also when a -run filter
 		// matched nothing in any package, or only errors outside tests came
 		NoneRan: t.NoneRan || t.Passed == 0 && failed == 0 &&
@@ -74,16 +78,21 @@ func items(its []*digest.Item, n int, rs *refs.Resolver, cut *cut) []report.Crux
 func item(it *digest.Item, rs *refs.Resolver, cut *cut) report.CruxItem {
 	ci := report.CruxItem{Kind: it.Kind, Title: it.Title}
 	if it.Count > 1 && it.Norm != "" {
-		ci.Title = it.Norm // folded warnings: the message without the one name, as the text has it
+		ci.Title = it.Norm // folded warnings: the message without the names, which go in names
 	}
 	in, test := rs.Refs(it)
 	ci.Test = test
 	if ci.Loc = rs.Location(it.Loc, it.Missing); ci.Loc != nil {
 		ci.Loc.In = in
+		ci.Missing = it.Missing
+	} else if it.Pkg != "" && it.Kind == "fail" {
+		ci.Pkg = rs.Path(it.Pkg, true) // go test: no line, only the package
 	}
 	ci.Body = it.Body[:cut.keep(len(it.Body), len(it.Body))]
 	if it.Count > 1 {
 		ci.Count = it.Count
+		names := distinct(it.Names)
+		ci.Names = names[:cut.keep(len(names), len(names))]
 	}
 	for _, at := range it.Locs[:cut.keep(len(it.Locs), len(it.Locs))] {
 		at, missing := strings.CutSuffix(at, " (not found)") // how tidy marks a folded location that's missing
@@ -95,6 +104,23 @@ func item(it *digest.Item, rs *refs.Resolver, cut *cut) report.CruxItem {
 		}
 	}
 	return ci
+}
+
+// distinct returns folded warnings' names once each, in order, without
+// their quote marks (`a`, ‘a’, "a").
+func distinct(names []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		if r := []rune(n); len(r) > 2 {
+			n = string(r[1 : len(r)-1])
+		}
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // tailWanted reports whether the end of the output belongs in the result:
