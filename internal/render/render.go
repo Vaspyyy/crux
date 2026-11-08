@@ -250,11 +250,35 @@ func testCounts(r *digest.Report, c pal) string {
 	return strings.Join(parts, ", ")
 }
 
-// items prints errors, failed tests and warnings within the budget: every
-// error and failure gets its line before any code frame or warning does.
-// refs (optional) names the symbols each one is in.
-func (w *report) items(r *digest.Report, budget int, ok bool, refs func(*digest.Item) []string) {
-	c := w.c
+// Listed says how many of the errors, failed tests and warnings the text
+// report lists with o's budget: the first n of each. Output the report
+// shows whole (raw, or short and unrecognised) counts as listing them all.
+func Listed(run Run, r *digest.Report, o Options) (errors, failures, warnings int) {
+	if o.Raw || !r.Structured && len(r.Meaningful) <= shortOutput {
+		return len(r.Errors), len(r.Failures), len(r.Warnings)
+	}
+	w := &report{} // the lines Report writes before the items
+	w.header(run, run.Exit == 0)
+	if r.HasTests {
+		w.line("tests: %s", testCounts(r, w.c))
+	}
+	l := w.plan(r, max(o.Budget, 10), run.Exit == 0, o.Refs)
+	errors = min(len(r.Errors), l.shown)
+	return errors, l.shown - errors, l.warnShown
+}
+
+// layout is what the item sections show within the budget.
+type layout struct {
+	shown     int // errors and failures listed, errors first
+	warnShown int // warnings listed
+	withBody  map[*digest.Item]bool
+	in        map[*digest.Item][]string // the symbol lines printed under an item
+}
+
+// plan fits errors, failed tests and warnings into the budget: every error
+// and failure gets its line before any code frame or warning does. refs
+// (optional) names the symbols each one is in.
+func (w *report) plan(r *digest.Report, budget int, ok bool, refs func(*digest.Item) []string) layout {
 	important := append(append([]*digest.Item{}, r.Errors...), r.Failures...)
 	room := budget - w.lines - 4 // header and footer
 	nWarn := len(r.Warnings)
@@ -334,6 +358,16 @@ func (w *report) items(r *digest.Report, budget int, ok bool, refs func(*digest.
 			}
 		}
 	}
+	return layout{shown: shown, warnShown: warnShown, withBody: withBody, in: in}
+}
+
+// items prints errors, failed tests and warnings as plan fits them into
+// the budget.
+func (w *report) items(r *digest.Report, budget int, ok bool, refs func(*digest.Item) []string) {
+	c := w.c
+	l := w.plan(r, budget, ok, refs)
+	shown, warnShown, withBody, in := l.shown, l.warnShown, l.withBody, l.in
+	nWarn := len(r.Warnings)
 
 	emit := func(it *digest.Item, color string) {
 		loc := it.Loc

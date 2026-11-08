@@ -30,6 +30,7 @@ var helpSections = []struct {
 		{"-v", "--verbose", "", "stream the full output while it runs, then print the report"},
 		{"-r", "--raw", "", "print the whole cleaned output instead of a digest"},
 		{"-A", "--agent", "", "plain report without colors or live status (default when not a terminal)"},
+		{"", "--json", "", "print one JSON document for programs instead of the report (-v streams to stderr)"},
 	}},
 	{"RUNNING", []helpFlag{
 		{"", "--keep-locale", "", "don't switch the command to English messages"},
