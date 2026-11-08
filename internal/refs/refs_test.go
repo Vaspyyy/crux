@@ -178,3 +178,20 @@ func TestReport(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}
 }
+
+// Words are the whole words in a symbol's own lines: what it mentions.
+func TestWords(t *testing.T) {
+	_, r := run(t, "go-test.out", ".")
+	w := r.Words("calc/calc_test.go:TestAdd")
+	for word, want := range map[string]bool{"TestAdd": true, "check": true, "Acc": true, "Add": true, "a": true,
+		"Div": false, "Errorf": false, "calc": false, "Ad": false} {
+		if w[word] != want {
+			t.Errorf("TestAdd mentions %q: %v, want %v", word, w[word], want)
+		}
+	}
+	for _, missing := range []string{"calc/calc_test.go:TestGone", "calc/calc_test.go", "calc/calc_test.go:7", "gone.go:F"} {
+		if w := r.Words(missing); w != nil {
+			t.Errorf("%s: %v", missing, w)
+		}
+	}
+}

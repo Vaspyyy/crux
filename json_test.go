@@ -312,7 +312,7 @@ func TestJSONCapsLists(t *testing.T) {
 	for range report.MaxItems + 5 {
 		r.Warnings = append(r.Warnings, &digest.Item{Kind: "warning", Title: "w", Count: 1})
 	}
-	c, tr := result(render.Run{Argv: []string{"make"}}, r, refs.New(t.TempDir()), opts{})
+	c, tr := result(render.Run{Argv: []string{"make"}}, r, refs.New(t.TempDir()), opts{}, nil, 0)
 	if len(c.Warnings) != report.MaxItems || tr == nil || *tr != (report.Truncated{Shown: report.MaxItems, Total: report.MaxItems + 5}) {
 		t.Errorf("%d warnings, truncated %+v", len(c.Warnings), tr)
 	}

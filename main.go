@@ -14,6 +14,7 @@ import (
 
 	"github.com/Vaspyyy/prism/repo"
 	"github.com/Vaspyyy/prism/report"
+	"github.com/Vaspyyy/prism/work"
 	"golang.org/x/term"
 
 	"github.com/Vaspyyy/crux/internal/digest"
@@ -33,6 +34,7 @@ type opts struct {
 	agent      bool
 	keepLocale bool
 	noLog      bool
+	noContext  bool // --no-context: read no context and record nothing
 	json       bool
 	args       []string // crux's arguments as given, for the JSON envelope
 }
@@ -85,6 +87,8 @@ func run(args []string) int {
 			o.keepLocale = true
 		case a == "--no-log":
 			o.noLog = true
+		case a == "--no-context":
+			o.noContext = true
 		case a == "--json":
 			o.json = true
 		case a == "-b" || a == "--budget":
@@ -142,6 +146,15 @@ func run(args []string) int {
 	command := render.Command(argv)
 	cwd, _ := os.Getwd()
 
+	// context loads while the command runs (env is already taken): what
+	// changed and the focus, for marks and suggestions, which --raw has none of
+	layers := work.Changes | work.Focus
+	if o.raw {
+		layers = 0
+	}
+	ctx := loadContext(cwd, layers, work.Disabled(o.noContext))
+	defer ctx.wait() // never leave it running
+
 	var live *render.Live
 	errTTY := term.IsTerminal(int(os.Stderr.Fd()))
 	if human && !o.verbose && errTTY {
@@ -188,10 +201,30 @@ func run(args []string) int {
 	digest.GoModule, digest.GoModuleDir = goModule(cwd)
 	r := digest.Digest(lines, res.Exit)
 	rr := render.Run{Argv: argv, Exit: res.Exit, Signal: res.Signal, Duration: res.Duration, LogPath: logPath, Lines: lines}
+	info, st := ctx.wait()
 	resolver := refs.New(cwd)
+	resolver.SetRepo(info)
+	// the run is recorded once it's reported, pass or fail, so an old
+	// failure doesn't outlive its fix; never a reason to fail or wait
+	defer func() {
+		if st.Store != nil {
+			st.Store.SetLastRun("crux", lastRun(argv, res.Exit, r, resolver))
+		}
+	}()
+	var fromContext, plain []report.Next
+	if !o.raw {
+		fromContext, plain = suggest(r, resolver, st)
+	}
+	next := append(fromContext, plain...)
+	// next: lines that don't depend on context come out of the budget;
+	// the context: line and context's suggestions come on top, so turning
+	// context on never takes room from errors, failures or warnings
+	ropts := render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: markedLines(resolver, st), Reserve: len(plain)}
 	if o.json {
 		e := report.New("crux", version, o.args, repoOr(resolver.Repo(), cwd))
-		e.Result, e.Truncated = result(rr, r, resolver, o)
+		e.Result, e.Truncated = result(rr, r, resolver, o, st, ropts.Reserve)
+		e.Context = st.Context()
+		e.Next = append(e.Next, next...)
 		report.Write(os.Stdout, e)
 		return res.Exit
 	}
@@ -200,9 +233,35 @@ func run(args []string) int {
 	}
 	if o.raw { // stdout is the cleaned output and nothing else
 		fmt.Fprint(os.Stderr, render.Header(rr, color && term.IsTerminal(int(os.Stderr.Fd()))))
+		fmt.Print(render.Report(rr, r, ropts))
+		return res.Exit
 	}
-	fmt.Print(render.Report(rr, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: resolver.Lines}))
+	body := render.Report(rr, r, ropts) // hands out the marks the context: line names
+	fmt.Print(contextLine(st.Line(), color) + body + nextLines(next, color))
 	return res.Exit
+}
+
+// contextLine is the context: line on top of the report, or "".
+func contextLine(line string, color bool) string {
+	if line == "" {
+		return ""
+	}
+	if color {
+		return "\x1b[2m" + line + "\x1b[0m\n"
+	}
+	return line + "\n"
+}
+
+// nextLines are the next: lines at the bottom of the report.
+func nextLines(next []report.Next, color bool) string {
+	var b strings.Builder
+	for i, l := range report.NextLines(next) {
+		if color { // the label and the reason faint, the command as is
+			l = "\x1b[2mnext:\x1b[0m " + next[i].Cmd + "\x1b[2m" + strings.TrimPrefix(l, "next: "+next[i].Cmd) + "\x1b[0m"
+		}
+		b.WriteString(l + "\n")
+	}
+	return b.String()
 }
 
 // usage reports a bad crux flag (exit 2).

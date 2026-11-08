@@ -35,6 +35,7 @@ var helpSections = []struct {
 	{"RUNNING", []helpFlag{
 		{"", "--keep-locale", "", "don't switch the command to English messages"},
 		{"", "--no-log", "", "don't keep the full output on disk"},
+		{"", "--no-context", "", "ignore and don't record context; also PRISM_NO_CONTEXT=1"},
 		{"", "--log", "", "print the path of the last run's full log in this directory and exit"},
 	}},
 	{"OTHER", []helpFlag{
@@ -55,6 +56,7 @@ var helpNotes = []helpPair{
 	{"exit code", "the command's own"},
 	{"locale", "commands run with LC_ALL=C.UTF-8 unless --keep-locale is given"},
 	{"logs", "~/.local/state/crux/logs, kept for a week"},
+	{"context", "in lines are marked [changed], [branch] or [focus]; the run is recorded for seek and recap"},
 	{"NO_COLOR", "set it to turn colors off"},
 }
 

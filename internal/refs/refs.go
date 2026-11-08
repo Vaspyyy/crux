@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Vaspyyy/prism/outline"
 	"github.com/Vaspyyy/prism/ref"
@@ -56,6 +57,14 @@ type sym struct {
 // New returns a resolver for locations relative to cwd.
 func New(cwd string) *Resolver {
 	return &Resolver{cwd: cwd, files: map[string]*file{}, crates: map[string][]sym{}, dirTest: map[string][]string{}}
+}
+
+// SetRepo hands the resolver the repository cwd is in, when the caller
+// has already detected it, so it isn't detected twice.
+func (r *Resolver) SetRepo(info *repo.Info) {
+	if info != nil {
+		r.repo, r.noRepo = info, false
+	}
 }
 
 // Lines returns what to print under an error or failure: "in <ref>" for
@@ -104,6 +113,48 @@ func (r *Resolver) In(loc string, missing bool) string {
 // Repo returns the repository the working directory is in (outside git:
 // the directory itself), or nil when it couldn't be read.
 func (r *Resolver) Repo() *repo.Info { return r.repoInfo() }
+
+// Words returns the identifiers that appear as whole words in the lines
+// of a symbol, given by a ref that Lines, Refs or In returned. nil when
+// the symbol can't be found. A name in the set is mentioned by the symbol
+// in Prism's sense (basis "reference"): textually, maybe a different
+// symbol of the same name.
+func (r *Resolver) Words(symRef string) map[string]bool {
+	info := r.repoInfo()
+	sr := ref.Parse(symRef, nil)
+	if info == nil || sr.Name == "" {
+		return nil
+	}
+	abs := filepath.Join(info.Root, filepath.FromSlash(sr.Path))
+	f := r.file(abs)
+	if f == nil {
+		return nil
+	}
+	for i, fr := range f.refs {
+		if fr.String() != symRef {
+			continue
+		}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return nil
+		}
+		lines := strings.Split(string(data), "\n")
+		t := f.ts[i]
+		if t.Line < 1 || t.Line > len(lines) {
+			return nil
+		}
+		words := map[string]bool{}
+		for _, l := range lines[t.Line-1 : max(min(t.End, len(lines)), t.Line)] {
+			for _, w := range strings.FieldsFunc(l, notWord) {
+				words[w] = true
+			}
+		}
+		return words
+	}
+	return nil
+}
+
+func notWord(c rune) bool { return !(c == '_' || unicode.IsLetter(c) || unicode.IsDigit(c)) }
 
 // locRe takes ":line[:col]" off the end of a location, so its path may
 // contain ':'.

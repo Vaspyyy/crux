@@ -2,9 +2,18 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
+
+// TestMain turns context off: crux's reports then depend only on their
+// arguments and files, as the golden tests expect. The context tests turn
+// it back on.
+func TestMain(m *testing.M) {
+	os.Setenv("PRISM_NO_CONTEXT", "1")
+	os.Exit(m.Run())
+}
 
 func TestSplitShortFlags(t *testing.T) {
 	for in, want := range map[string]string{
@@ -44,7 +53,7 @@ func TestBudgetFlagMustComeLastInAGroup(t *testing.T) {
 }
 
 func TestHelpColorsOnlyWhenAsked(t *testing.T) {
-	if plain := helpText(false); strings.Contains(plain, "\x1b") || !strings.Contains(plain, "--budget N") {
+	if plain := helpText(false); strings.Contains(plain, "\x1b") || !strings.Contains(plain, "--budget N") || !strings.Contains(plain, "--no-context") {
 		t.Errorf("plain help:\n%s", plain)
 	}
 	if colored := helpText(true); !strings.Contains(colored, hSection+"USAGE"+hReset) {
