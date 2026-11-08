@@ -79,7 +79,7 @@ func (r *Resolver) affords(paths []string) bool {
 		if _, done := r.files[abs]; done {
 			continue
 		}
-		if st, err := os.Stat(abs); err == nil {
+		if st, err := os.Lstat(abs); err == nil {
 			need += st.Size()
 		}
 	}
@@ -161,8 +161,8 @@ func (r *Resolver) Words(symRef string) map[string]bool {
 		if fr.String() != symRef {
 			continue
 		}
-		data, err := os.ReadFile(abs)
-		if err != nil {
+		data, ok := outline.Read(abs)
+		if !ok {
 			return nil
 		}
 		lines := strings.Split(string(data), "\n")
@@ -287,7 +287,9 @@ func (r *Resolver) file(p string) *file {
 	if !ok {
 		return nil
 	}
-	st, err := os.Stat(abs)
+	// what outline.Read takes: a regular file, never a symlink (git stores
+	// one as its target's path) or a device that never ends
+	st, err := os.Lstat(abs)
 	if err != nil || !st.Mode().IsRegular() || st.Size() > outline.MaxSize {
 		return nil
 	}
@@ -302,8 +304,8 @@ func (r *Resolver) file(p string) *file {
 		}
 		r.limit -= st.Size()
 	}
-	data, err := os.ReadFile(abs)
-	if err != nil {
+	data, ok := outline.Read(abs)
+	if !ok {
 		return nil
 	}
 	ts := ref.Targets(rel, outline.Parse(abs, data, maxSymbols))

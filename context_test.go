@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -842,5 +843,42 @@ func TestHelper(t *testing.T) {
 	want := "next: recap --show " + listRef + "       the uncommitted change to List, which check mentions"
 	if got := nextOf(out); len(got) != 2 || got[0] != want {
 		t.Errorf("next %q, want %q first:\n%s", got, want, out)
+	}
+}
+
+// Files that aren't regular can't hang crux or leak into refs: errors in
+// a symlink to /dev/zero (which never ends), a named pipe (which blocks)
+// and a symlink to a regular file (git stores only its target's path) get
+// no in line, and a go.mod that is a pipe is passed over. Context is on,
+// so Prism reads the untracked files too.
+func TestNonRegularFilesDontHang(t *testing.T) {
+	root := fixture(t)
+	dir := filepath.Join(root, "internal", "files")
+	if err := os.Symlink("/dev/zero", filepath.Join(dir, "zero.go")); err != nil {
+		t.Skip("needs symlinks:", err)
+	}
+	if err := os.Symlink("files.go", filepath.Join(dir, "link.go")); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"pipe.go", "go.mod"} {
+		if err := syscall.Mkfifo(filepath.Join(dir, p), 0o644); err != nil {
+			t.Skip("needs named pipes:", err)
+		}
+	}
+	t.Chdir(dir) // its go.mod is the pipe; the module's is further up
+	done := make(chan string, 1)
+	go func() {
+		_, out := text(t, printed("# example.com/fixture/internal/files",
+			"zero.go:3:1: undefined: z", "pipe.go:3:1: undefined: p", "link.go:10:9: undefined: l", "files.go:10:9: undefined: f")...)
+		done <- out
+	}()
+	select {
+	case out := <-done:
+		if strings.Contains(out, "in internal/files/zero.go") || strings.Contains(out, "in internal/files/pipe.go") ||
+			strings.Contains(out, "in internal/files/link.go") || !strings.Contains(out, "files.go:10:9  undefined: f\n    in "+listRef+"\n") {
+			t.Errorf("report:\n%s", out)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("crux hangs on a file that isn't regular")
 	}
 }

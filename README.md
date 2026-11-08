@@ -72,7 +72,7 @@ Under each error and failed test, crux names the function, method or type its lo
     in calc/calc_test.go:TestNoMessage
 ```
 
-`in` is the innermost definition whose lines contain the location, found with fast per-language rules rather than a compiler, so it says where the line is, not what the code does. A failure without a location gets `in` with the test itself. Go tests are looked up in their package's `_test.go` files, pytest tests by their node ID or traceback header, and cargo tests (`module::tests::name`) only when exactly one function in the crate ends in `tests.name`. Files outside the repository (the standard library, installed packages), lines outside any definition and warnings get no `in` line.
+`in` is the innermost definition whose lines contain the location, found with fast per-language rules rather than a compiler, so it says where the line is, not what the code does. A failure without a location gets `in` with the test itself. Go tests are looked up in their package's `_test.go` files, pytest tests by their node ID or traceback header, and cargo tests (`module::tests::name`) only when exactly one function in the crate ends in `tests.name`. Files outside the repository (the standard library, installed packages), files that aren't regular files (symlinks, devices, pipes), lines outside any definition and warnings get no `in` line.
 
 A `notes:` section says when a run did less than it seems to have done: cargo stopping at the first failing test target, a Go test panic (also one in a goroutine) ending the rest of its package, a `-run` filter that matched no test, pytest stopping after a collection error, after `-x` or on Ctrl+C, a package that didn't build.
 

@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -378,7 +379,7 @@ func checkCommand(name string) (int, string) {
 // relative to cwd. Go test prints only file names; this gives them a folder.
 func goModule(cwd string) (string, string) {
 	for dir := cwd; ; dir = filepath.Dir(dir) {
-		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
+		if data, ok := readSmall(filepath.Join(dir, "go.mod")); ok {
 			for _, line := range strings.Split(string(data), "\n") {
 				if f := strings.Fields(line); len(f) == 2 && f[0] == "module" {
 					rel, err := filepath.Rel(cwd, dir)
@@ -394,6 +395,25 @@ func goModule(cwd string) (string, string) {
 			return "", ""
 		}
 	}
+}
+
+// readSmall reads a regular file of at most 1 MB, following symlinks as go
+// does, so a go.mod that is a device or a pipe can't hang crux.
+func readSmall(p string) ([]byte, bool) {
+	const max = 1 << 20
+	if st, err := os.Stat(p); err != nil || !st.Mode().IsRegular() || st.Size() > max {
+		return nil, false
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		return nil, false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, max+1))
+	return data, err == nil && len(data) <= max
 }
 
 // wantsColor reports whether text written to f may be colored.
