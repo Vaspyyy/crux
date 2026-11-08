@@ -178,3 +178,52 @@ func TestReport(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}
 }
+
+// Words are the whole words in a symbol's own lines: what it mentions.
+func TestWords(t *testing.T) {
+	_, r := run(t, "go-test.out", ".")
+	w := r.Words("calc/calc_test.go:TestAdd")
+	for word, want := range map[string]bool{"TestAdd": true, "check": true, "Acc": true, "Add": true, "a": true,
+		"Div": false, "Errorf": false, "calc": false, "Ad": false} {
+		if w[word] != want {
+			t.Errorf("TestAdd mentions %q: %v, want %v", word, w[word], want)
+		}
+	}
+	for _, missing := range []string{"calc/calc_test.go:TestGone", "calc/calc_test.go", "calc/calc_test.go:7", "gone.go:F"} {
+		if w := r.Words(missing); w != nil {
+			t.Errorf("%s: %v", missing, w)
+		}
+	}
+}
+
+// A limit stops parsing new files; parsed ones stay free, and a refused
+// file isn't remembered as missing. A Go test is only looked up when all
+// of its package's test files fit.
+func TestLimit(t *testing.T) {
+	_, r := run(t, "go-test.out", ".")
+	calc := &digest.Item{Kind: "error", Loc: "calc/calc.go:9:2"}
+	r.Limit(0)
+	if l := r.Lines(calc); l != nil {
+		t.Errorf("parsed with no room: %q", l)
+	}
+	add := &digest.Item{Kind: "fail", Title: "TestAdd", Runner: "go test", Pkg: "calc", Loc: "calc/calc_test.go:7"}
+	if l := r.Lines(add); l != nil {
+		t.Errorf("parsed with no room: %q", l)
+	}
+	r.Limit(-1)
+	if l := strings.Join(r.Lines(calc), " | "); l != "in calc/calc.go:Acc.Add" {
+		t.Errorf("after lifting the limit: %q", l)
+	}
+	r.Limit(0) // calc.go is parsed now: free
+	if l := strings.Join(r.Lines(calc), " | "); l != "in calc/calc.go:Acc.Add" {
+		t.Errorf("a parsed file under a limit: %q", l)
+	}
+	st, err := os.Stat(filepath.Join(project(t), "calc", "calc_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Limit(st.Size())
+	if l := strings.Join(r.Lines(add), " | "); l != "in calc/calc_test.go:check | test calc/calc_test.go:TestAdd" {
+		t.Errorf("with room for the package's tests: %q", l)
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Vaspyyy/prism/outline"
 	"github.com/Vaspyyy/prism/ref"
@@ -39,6 +40,8 @@ type Resolver struct {
 	files   map[string]*file
 	crates  map[string][]sym
 	dirTest map[string][]string // go package dir: its _test.go files
+	limit   int64               // bytes of source it may still parse; negative: no limit
+	refused map[string]bool     // files the limit kept out, until it changes
 }
 
 // file is a parsed source file in the repository.
@@ -55,7 +58,40 @@ type sym struct {
 
 // New returns a resolver for locations relative to cwd.
 func New(cwd string) *Resolver {
-	return &Resolver{cwd: cwd, files: map[string]*file{}, crates: map[string][]sym{}, dirTest: map[string][]string{}}
+	return &Resolver{cwd: cwd, files: map[string]*file{}, crates: map[string][]sym{}, dirTest: map[string][]string{}, limit: -1}
+}
+
+// Limit caps how much more source the resolver parses, in bytes. Files it
+// has parsed stay free; a lookup that needs more gives no ref, and one that
+// needs a set of files (a Go package's tests, a cargo crate) only runs if
+// all of them fit. A negative n removes the cap.
+func (r *Resolver) Limit(n int64) { r.limit, r.refused = n, nil }
+
+// affords reports whether the files not parsed yet among paths fit in the
+// limit.
+func (r *Resolver) affords(paths []string) bool {
+	if r.limit < 0 {
+		return true
+	}
+	var need int64
+	for _, p := range paths {
+		abs := r.abs(p)
+		if _, done := r.files[abs]; done {
+			continue
+		}
+		if st, err := os.Lstat(abs); err == nil {
+			need += st.Size()
+		}
+	}
+	return need <= r.limit
+}
+
+// SetRepo hands the resolver the repository cwd is in, when the caller
+// has already detected it, so it isn't detected twice.
+func (r *Resolver) SetRepo(info *repo.Info) {
+	if info != nil {
+		r.repo, r.noRepo = info, false
+	}
 }
 
 // Lines returns what to print under an error or failure: "in <ref>" for
@@ -104,6 +140,48 @@ func (r *Resolver) In(loc string, missing bool) string {
 // Repo returns the repository the working directory is in (outside git:
 // the directory itself), or nil when it couldn't be read.
 func (r *Resolver) Repo() *repo.Info { return r.repoInfo() }
+
+// Words returns the identifiers that appear as whole words in the lines
+// of a symbol, given by a ref that Lines, Refs or In returned. nil when
+// the symbol can't be found. A name in the set is mentioned by the symbol
+// in Prism's sense (basis "reference"): textually, maybe a different
+// symbol of the same name.
+func (r *Resolver) Words(symRef string) map[string]bool {
+	info := r.repoInfo()
+	sr := ref.Parse(symRef, nil)
+	if info == nil || sr.Name == "" {
+		return nil
+	}
+	abs := filepath.Join(info.Root, filepath.FromSlash(sr.Path))
+	f := r.file(abs)
+	if f == nil {
+		return nil
+	}
+	for i, fr := range f.refs {
+		if fr.String() != symRef {
+			continue
+		}
+		data, ok := outline.Read(abs)
+		if !ok {
+			return nil
+		}
+		lines := strings.Split(string(data), "\n")
+		t := f.ts[i]
+		if t.Line < 1 || t.Line > len(lines) {
+			return nil
+		}
+		words := map[string]bool{}
+		for _, l := range lines[t.Line-1 : max(min(t.End, len(lines)), t.Line)] {
+			for _, w := range strings.FieldsFunc(l, notWord) {
+				words[w] = true
+			}
+		}
+		return words
+	}
+	return nil
+}
+
+func notWord(c rune) bool { return !(c == '_' || unicode.IsLetter(c) || unicode.IsDigit(c)) }
 
 // locRe takes ":line[:col]" off the end of a location, so its path may
 // contain ':'.
@@ -194,6 +272,9 @@ func (r *Resolver) file(p string) *file {
 	if f, ok := r.files[abs]; ok {
 		return f
 	}
+	if r.refused[abs] {
+		return nil
+	}
 	r.files[abs] = nil
 	if !outline.Supported(abs) || dependency(abs) {
 		return nil
@@ -206,12 +287,25 @@ func (r *Resolver) file(p string) *file {
 	if !ok {
 		return nil
 	}
-	st, err := os.Stat(abs)
+	// what outline.Read takes: a regular file, never a symlink (git stores
+	// one as its target's path) or a device that never ends
+	st, err := os.Lstat(abs)
 	if err != nil || !st.Mode().IsRegular() || st.Size() > outline.MaxSize {
 		return nil
 	}
-	data, err := os.ReadFile(abs)
-	if err != nil {
+	if r.limit >= 0 {
+		if st.Size() > r.limit {
+			delete(r.files, abs) // not now; it isn't missing
+			if r.refused == nil {
+				r.refused = map[string]bool{}
+			}
+			r.refused[abs] = true
+			return nil
+		}
+		r.limit -= st.Size()
+	}
+	data, ok := outline.Read(abs)
+	if !ok {
 		return nil
 	}
 	ts := ref.Targets(rel, outline.Parse(abs, data, maxSymbols))
@@ -284,6 +378,9 @@ func (r *Resolver) goTest(it *digest.Item) string {
 			}
 		}
 		r.dirTest[dir] = files
+	}
+	if !r.affords(files) { // a test defined in a file left out could make the one found wrong
+		return ""
 	}
 	var found []string
 	for _, p := range files {
@@ -439,6 +536,9 @@ func (r *Resolver) crate(root string) []sym {
 		}
 		return nil
 	})
+	if !tooMany && !r.affords(paths) {
+		return nil // over the limit: not now, and not remembered as empty
+	}
 	var syms []sym
 	if !tooMany {
 		slices.Sort(paths)

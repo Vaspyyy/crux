@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/Vaspyyy/prism/report"
+	"github.com/Vaspyyy/prism/work"
 
 	"github.com/Vaspyyy/crux/internal/digest"
 	"github.com/Vaspyyy/crux/internal/refs"
@@ -15,7 +16,11 @@ import (
 // those the text's budget shows, unless -b was given: then the ones the
 // text report lists. Lists are capped at report.MaxItems; truncated says
 // what a limit left out (nil if nothing).
-func result(run render.Run, r *digest.Report, rs *refs.Resolver, o opts) (*report.Crux, *report.Truncated) {
+//
+// Locations carry the context marks of the symbol they're in (st may be
+// off). reserve is the lines the text report keeps for next: lines, so
+// that with -b the result lists what the text does.
+func result(run render.Run, r *digest.Report, rs *refs.Resolver, o opts, st *work.State, reserve int) (*report.Crux, *report.Truncated) {
 	c := &report.Crux{
 		Command:    run.Argv,
 		Exit:       run.Exit,
@@ -32,12 +37,12 @@ func result(run render.Run, r *digest.Report, rs *refs.Resolver, o opts) (*repor
 	}
 	nErr, nFail, nWarn := len(r.Errors), len(r.Failures), len(r.Warnings)
 	if o.budgetSet {
-		nErr, nFail, nWarn = render.Listed(run, r, render.Options{Budget: o.budget, Refs: rs.Lines})
+		nErr, nFail, nWarn = render.Listed(run, r, render.Options{Budget: o.budget, Refs: rs.Lines, Reserve: reserve})
 	}
 	var cut cut
-	c.Errors = items(r.Errors, nErr, rs, &cut)
-	c.Failures = items(r.Failures, nFail, rs, &cut)
-	c.Warnings = items(r.Warnings, nWarn, rs, &cut)
+	c.Errors = items(r.Errors, nErr, rs, st, &cut)
+	c.Failures = items(r.Failures, nFail, rs, st, &cut)
+	c.Warnings = items(r.Warnings, nWarn, rs, st, &cut)
 	c.Notes = r.Notes[:cut.keep(len(r.Notes), len(r.Notes))]
 	if tailWanted(r, run.Exit) {
 		c.Tail = r.Tail
@@ -63,10 +68,10 @@ func tests(r *digest.Report) *report.CruxTests {
 }
 
 // items turns the first n of a report's items into JSON ones.
-func items(its []*digest.Item, n int, rs *refs.Resolver, cut *cut) []report.CruxItem {
+func items(its []*digest.Item, n int, rs *refs.Resolver, st *work.State, cut *cut) []report.CruxItem {
 	out := []report.CruxItem{}
 	for _, it := range its[:cut.keep(len(its), n)] {
-		out = append(out, item(it, rs, cut))
+		out = append(out, item(it, rs, st, cut))
 	}
 	return out
 }
@@ -74,16 +79,17 @@ func items(its []*digest.Item, n int, rs *refs.Resolver, cut *cut) []report.Crux
 // item is one error, failure or warning. loc.in and test are the refs the
 // text prints as "in" and "test" lines (a failure without a location has
 // no loc, and its test names it); folded errors' other locations get
-// theirs too.
-func item(it *digest.Item, rs *refs.Resolver, cut *cut) report.CruxItem {
+// theirs too, each location the context marks of the symbol in in, and
+// the test its own (test_marks).
+func item(it *digest.Item, rs *refs.Resolver, st *work.State, cut *cut) report.CruxItem {
 	ci := report.CruxItem{Kind: it.Kind, Title: it.Title}
 	if it.Count > 1 && it.Norm != "" {
 		ci.Title = it.Norm // folded warnings: the message without the names, which go in names
 	}
 	in, test := rs.Refs(it)
-	ci.Test = test
+	ci.Test, ci.TestMarks = test, marks(st, test)
 	if ci.Loc = rs.Location(it.Loc, it.Missing); ci.Loc != nil {
-		ci.Loc.In = in
+		ci.Loc.In, ci.Loc.Marks = in, marks(st, in)
 		ci.Missing = it.Missing
 	} else if it.Pkg != "" && it.Kind == "fail" {
 		ci.Pkg = rs.Path(it.Pkg, true) // go test: no line, only the package
@@ -99,11 +105,21 @@ func item(it *digest.Item, rs *refs.Resolver, cut *cut) report.CruxItem {
 		if l := rs.Location(at, missing); l != nil {
 			if it.Kind != "warning" {
 				l.In = rs.In(at, missing)
+				l.Marks = marks(st, l.In)
 			}
 			ci.Locs = append(ci.Locs, *l)
 		}
 	}
 	return ci
+}
+
+// marks returns the context marks of a symbol the result names, counted
+// as shown.
+func marks(st *work.State, sym string) []string {
+	if sym == "" {
+		return nil
+	}
+	return st.Marks(sym)
 }
 
 // distinct returns folded warnings' names once each, in order, without

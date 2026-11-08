@@ -261,3 +261,35 @@ func TestRefsLinesCountAgainstTheBudget(t *testing.T) {
 		t.Errorf("raw output has refs: %v\n%s", calls, out)
 	}
 }
+
+// Context marks after an "in" ref stand out from the ref in color.
+func TestMarksAfterRefs(t *testing.T) {
+	r := &digest.Report{Structured: true, Meaningful: make([]string, 30),
+		Errors: []*digest.Item{{Kind: "error", Title: "boom", Loc: "a.go:3:1", Count: 1}}}
+	refs := func(*digest.Item) []string { return []string{"in a.go:F [changed] [focus]"} }
+	run := Run{Argv: []string{"go"}, Exit: 1, Lines: make([]string, 30)}
+	if out := Report(run, r, Options{Budget: 60, Refs: refs}); !strings.Contains(out, "\n    in a.go:F [changed] [focus]\n") {
+		t.Errorf("plain:\n%s", out)
+	}
+	if out := Report(run, r, Options{Budget: 60, Refs: refs, Color: true}); !strings.Contains(out, "\x1b[36ma.go:F\x1b[0m \x1b[33m[changed] [focus]\x1b[0m\n") {
+		t.Errorf("colored: %q", out)
+	}
+}
+
+// Lines the caller adds after the report come out of the budget.
+func TestReserveComesOutOfTheBudget(t *testing.T) {
+	r := &digest.Report{Structured: true, Meaningful: make([]string, 50)}
+	for i := range 5 {
+		r.Errors = append(r.Errors, &digest.Item{Kind: "error", Title: fmt.Sprintf("problem %d", i), Loc: fmt.Sprintf("a.c:%d:1", i+1),
+			Body: []string{"  frame"}, Count: 1})
+	}
+	run := Run{Argv: []string{"make"}, Exit: 2, Lines: make([]string, 50)}
+	full := Report(run, r, Options{Budget: 16})
+	less := Report(run, r, Options{Budget: 16, Reserve: 2})
+	if n := strings.Count(less, "\n"); n != strings.Count(full, "\n")-2 || !strings.Contains(less, "problem 4") {
+		t.Errorf("reserve 2: %d lines, without %d:\n%s", n, strings.Count(full, "\n"), less)
+	}
+	if e, _, _ := Listed(run, r, Options{Budget: 16, Reserve: 2}); e != 5 {
+		t.Errorf("listed %d errors", e)
+	}
+}

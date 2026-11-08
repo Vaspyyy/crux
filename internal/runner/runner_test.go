@@ -36,3 +36,18 @@ func TestRunPartialLastLine(t *testing.T) {
 		t.Errorf("lines = %q", res.Lines)
 	}
 }
+
+// Ctrl+C reaches crux (here: this process), which passes it on. A command
+// that catches it and exits normally still ran only partly.
+func TestRunReportsInterrupts(t *testing.T) {
+	res, err := Run([]string{"sh", "-c", `trap 'exit 2' INT; sleep 0.3; kill -INT $PPID; sleep 5`}, os.Environ(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Interrupted || res.Signal != 0 || res.Exit != 2 {
+		t.Errorf("interrupted %v, signal %v, exit %d", res.Interrupted, res.Signal, res.Exit)
+	}
+	if res, _ := Run([]string{"true"}, os.Environ(), nil); res.Interrupted {
+		t.Error("a plain run counts as interrupted")
+	}
+}

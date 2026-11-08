@@ -28,9 +28,16 @@ type Options struct {
 	Budget int // lines of report, roughly
 	Raw    bool
 	// Refs returns the lines that name the symbols an error or failure is
-	// in ("in <ref>", "test <ref>"). It's only called for items the report
-	// shows; nil prints none.
+	// in ("in <ref>", "test <ref>"), a ref optionally followed by context
+	// marks (" [changed]"). It's called while planning, for items the
+	// report may show; nil prints none.
 	Refs func(*digest.Item) []string
+	// Shown is called for each item whose Refs lines the report prints
+	// (planning asks for more than fit).
+	Shown func(*digest.Item)
+	// Reserve is how many lines the caller adds after the report (next:
+	// lines); they come out of the budget.
+	Reserve int
 }
 
 // palette, ANSI 16 colors so it follows the terminal theme
@@ -118,7 +125,7 @@ func Report(run Run, r *digest.Report, o Options) string {
 	}
 
 	budget := max(o.Budget, 10)
-	w.items(r, budget, ok, o.Refs)
+	w.items(r, budget, o.Reserve, ok, o.Refs, o.Shown)
 
 	if len(r.Notes) > 0 {
 		w.line("\nnotes:")
@@ -262,7 +269,7 @@ func Listed(run Run, r *digest.Report, o Options) (errors, failures, warnings in
 	if r.HasTests {
 		w.line("tests: %s", testCounts(r, w.c))
 	}
-	l := w.plan(r, max(o.Budget, 10), run.Exit == 0, o.Refs)
+	l := w.plan(r, max(o.Budget, 10), o.Reserve, run.Exit == 0, o.Refs)
 	errors = min(len(r.Errors), l.shown)
 	return errors, l.shown - errors, l.warnShown
 }
@@ -278,9 +285,9 @@ type layout struct {
 // plan fits errors, failed tests and warnings into the budget: every error
 // and failure gets its line before any code frame or warning does. refs
 // (optional) names the symbols each one is in.
-func (w *report) plan(r *digest.Report, budget int, ok bool, refs func(*digest.Item) []string) layout {
+func (w *report) plan(r *digest.Report, budget, reserve int, ok bool, refs func(*digest.Item) []string) layout {
 	important := append(append([]*digest.Item{}, r.Errors...), r.Failures...)
-	room := budget - w.lines - 4 // header and footer
+	room := budget - w.lines - 4 - reserve // header, footer and the caller's lines
 	nWarn := len(r.Warnings)
 	sections := 0
 	if len(r.Errors) > 0 {
@@ -363,9 +370,9 @@ func (w *report) plan(r *digest.Report, budget int, ok bool, refs func(*digest.I
 
 // items prints errors, failed tests and warnings as plan fits them into
 // the budget.
-func (w *report) items(r *digest.Report, budget int, ok bool, refs func(*digest.Item) []string) {
+func (w *report) items(r *digest.Report, budget, reserve int, ok bool, refs func(*digest.Item) []string, printed func(*digest.Item)) {
 	c := w.c
-	l := w.plan(r, budget, ok, refs)
+	l := w.plan(r, budget, reserve, ok, refs)
 	shown, warnShown, withBody, in := l.shown, l.warnShown, l.withBody, l.in
 	nWarn := len(r.Warnings)
 
@@ -402,9 +409,16 @@ func (w *report) items(r *digest.Report, budget int, ok bool, refs func(*digest.
 			}
 		}
 		w.line("%s", clip(head))
+		if printed != nil && len(in[it]) > 0 {
+			printed(it)
+		}
 		for _, l := range in[it] {
 			word, ref, _ := strings.Cut(l, " ")
-			w.line("    %s%s%s %s%s%s", c.faint, word, c.reset, c.cyan, clip(ref), c.reset)
+			ref, marks, marked := strings.Cut(ref, " [")
+			if marked {
+				marks = " " + c.yellow + "[" + marks + c.reset
+			}
+			w.line("    %s%s%s %s%s%s%s", c.faint, word, c.reset, c.cyan, clip(ref), c.reset, marks)
 		}
 		if withBody[it] {
 			for _, l := range it.Body {

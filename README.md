@@ -47,6 +47,7 @@ Flags go before the command; everything after the command's name belongs to the 
 | `--json` | Print one JSON document instead of the report (see [JSON](#json)). |
 | `--keep-locale` | Don't switch the command to English messages. |
 | `--no-log` | Don't keep the full output on disk. |
+| `--no-context` | Don't read context or record the run (see [Context](#context)). `PRISM_NO_CONTEXT=1` does the same. |
 | `--log` | Print the path of the latest log from the current directory and exit. |
 
 Short flags can be combined (`crux -rv make`).
@@ -71,7 +72,7 @@ Under each error and failed test, crux names the function, method or type its lo
     in calc/calc_test.go:TestNoMessage
 ```
 
-`in` is the innermost definition whose lines contain the location, found with fast per-language rules rather than a compiler, so it says where the line is, not what the code does. A failure without a location gets `in` with the test itself. Go tests are looked up in their package's `_test.go` files, pytest tests by their node ID or traceback header, and cargo tests (`module::tests::name`) only when exactly one function in the crate ends in `tests.name`. Files outside the repository (the standard library, installed packages), lines outside any definition and warnings get no `in` line.
+`in` is the innermost definition whose lines contain the location, found with fast per-language rules rather than a compiler, so it says where the line is, not what the code does. A failure without a location gets `in` with the test itself. Go tests are looked up in their package's `_test.go` files, pytest tests by their node ID or traceback header, and cargo tests (`module::tests::name`) only when exactly one function in the crate ends in `tests.name`. Files outside the repository (the standard library, installed packages), files that aren't regular files (symlinks, devices, pipes), lines outside any definition and warnings get no `in` line.
 
 A `notes:` section says when a run did less than it seems to have done: cargo stopping at the first failing test target, a Go test panic (also one in a goroutine) ending the rest of its package, a `-run` filter that matched no test, pytest stopping after a collection error, after `-x` or on Ctrl+C, a package that didn't build.
 
@@ -92,12 +93,40 @@ glint, seek, recap and crux name files, symbols and locations the same way, so a
 
 Paths are relative to the repository root. The format is specified in [Prism](https://github.com/Vaspyyy/prism/blob/main/docs/refs.md).
 
+## Context
+
+In a git repository, crux reads what you're working on without being told: the symbols that changed (uncommitted, or committed on a branch other than the default one) and the commit or range recap last showed (the focus). It's the context seek and recap use too, described in [Prism](https://github.com/Vaspyyy/prism/blob/main/docs/context.md). crux does three things with it:
+
+- **Marks.** An `in` or `test` line whose symbol changed gets `[changed]` (uncommitted) or `[branch]` (committed on this branch), and one in the focus gets `[focus]`. A `context:` line at the top says what the marks are based on.
+- **Suggestions.** Up to three `next:` lines at the bottom, each a command to run as printed. From context: `recap --show <ref>` for a changed symbol that an error or failure is in, a failed test that changed, or a changed symbol whose name appears in the failed test or in the symbol an error is in (for a method, its type's name too; a symbol's own name never counts). Without context: `seek <ref>` for the first failed test's definition.
+- **The last run.** After every run, pass or fail, crux records the command, its exit code, the failed tests and the symbols errors and failures are in, as refs: those the report shows, and as many more as it can find in about 2 ms. A run that never started, or that was interrupted or killed by a signal, isn't recorded, so its partial results don't replace the last complete one. seek and recap read the record to mark what failed (`[failing]`). It's kept in the repository's git dir (`.git/prism/`), per worktree and agent session, and expires after an hour.
+
+```
+context: 1 changed symbol vs HEAD
+FAILED  go test -run '^TestList$' ./internal/files/  (exit 1, 0.6s, 5 lines of output)
+tests: 1 failed, 0/1 packages ok
+
+1 failed test:
+  TestList  internal/files/files_test.go:12
+    in internal/files/files_test.go:TestList
+    List = [a b], want [a b c]
+
+full log: /home/you/.local/state/crux/logs/20261108-132029.626-134757-go-test--TestList.log
+next: recap --show internal/files/files.go:List    the uncommitted change to List, which TestList mentions
+next: seek internal/files/files_test.go:TestList   the failed test's definition
+```
+
+Context never changes which errors, failures or warnings are listed: the `context:` line and context's suggestions come on top of the budget. The wording follows what's known: `in` means the line lies inside the symbol, "mentions" that the name appears in the text, "failed" that the test ran and failed. crux never says that a test covers code, since it has no coverage data.
+
+`--no-context` (or `PRISM_NO_CONTEXT=1`) reads and records nothing, and the report is the same minus the marks, the `context:` line and context's suggestions. Context costs about one `git status`, which runs while the command does, so only commands faster than that wait for it. After the report, the suggestions and the record add a few milliseconds at most.
+
 ## JSON
 
 `crux --json <command>` runs the command as usual and prints one JSON document instead of the report, for CI scripts and other programs: the exit code, test counts, every error, failed test and warning (location, `in` and `test` refs, explanation, folded locations), the notes and the log's path. Its shape is Prism's `report.Crux` inside the envelope glint, seek and recap print too, described in [Prism's output format](https://github.com/Vaspyyy/prism/blob/main/docs/output.md). The text report stays the default, and it's what agents should read: it's much shorter.
 
 - Paths are relative to the repository root (the text's are relative to the working directory), absolute outside the repository, and as the tool printed them when the file doesn't exist.
 - It lists everything (up to 10,000 entries per list), not only what the budget shows. With an explicit `-b` it lists what the text report would. `truncated` says how much a limit left out.
+- In a git repository, locations carry the context `marks` of the symbol they're in and failed tests their own `test_marks`, `context` says what context the run had (`applied` is `suggest` when only the suggestions came from it), and `next` holds the same suggestions as the `next:` lines. With `--no-context`, `context` is `null`.
 - The exit code is still the command's own, and nothing else is printed, so even stdout and stderr merged are one JSON document. `-v` streams the output to stderr. A command that can't be started gives an `error` with code `failed` (exit 127 or 126), and bad flags, or `-r` with `--json`, give `usage` (exit 2).
 
 ## Recognised tools

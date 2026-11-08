@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -17,6 +18,10 @@ type Result struct {
 	Exit     int
 	Duration time.Duration
 	Signal   syscall.Signal // non-zero if the command was killed by a signal
+	// Interrupted is set when crux got SIGINT or SIGTERM while the command
+	// ran (and passed it on): the run may have stopped early even if the
+	// command caught the signal and exited normally.
+	Interrupted bool
 }
 
 // Run starts argv, calls onLine for every line as it arrives, and waits.
@@ -43,8 +48,10 @@ func Run(argv []string, env []string, onLine func(string)) (*Result, error) {
 	sigs := make(chan os.Signal, 2)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigs)
+	var interrupted atomic.Bool
 	go func() {
 		for sig := range sigs {
+			interrupted.Store(true)
 			syscall.Kill(-cmd.Process.Pid, sig.(syscall.Signal))
 		}
 	}()
@@ -69,6 +76,7 @@ func Run(argv []string, env []string, onLine func(string)) (*Result, error) {
 	r.Close()
 	err = cmd.Wait()
 	res.Duration = time.Since(start)
+	res.Interrupted = interrupted.Load()
 	res.Exit = 0
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
