@@ -200,6 +200,7 @@ func run(args []string) int {
 	digest.Relative = cwd
 	digest.CheckFiles = true
 	digest.GoModule, digest.GoModuleDir = goModule(cwd)
+	digest.CargoNoFailFast = cargoNoFailFast(argv)
 	r := digest.Digest(lines, res.Exit)
 	rr := render.Run{Argv: argv, Exit: res.Exit, Signal: res.Signal, Duration: res.Duration, LogPath: logPath, Lines: lines}
 	info, st := ctx.wait()
@@ -219,7 +220,7 @@ func run(args []string) int {
 	// tests first, then seek for a failed test's definition
 	var rerun, plain []report.Next
 	if !o.raw {
-		rerun = rerunNext(argv, cwd, r, resolver)
+		rerun = rerunNext(argv, cwd, lines, r, resolver)
 		plain = plainNext(r, resolver)
 	}
 	room := min(maxContextNext, report.MaxNext-len(rerun)-len(plain))
@@ -376,6 +377,23 @@ func checkCommand(name string) (int, string) {
 		}
 	}
 	return 127, "command not found"
+}
+
+// cargoNoFailFast reports whether argv is cargo with --no-fail-fast
+// among its own options (before --).
+func cargoNoFailFast(argv []string) bool {
+	if filepath.Base(argv[0]) != "cargo" {
+		return false
+	}
+	for _, a := range argv[1:] {
+		switch a {
+		case "--":
+			return false
+		case "--no-fail-fast":
+			return true
+		}
+	}
+	return false
 }
 
 // goModule finds the enclosing go.mod: its module path and its directory

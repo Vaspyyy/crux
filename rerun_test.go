@@ -107,6 +107,59 @@ func TestRerunPytest(t *testing.T) {
 		"reruns the 1 failed test", "test_p[2]")
 }
 
+// pytest --tb=no lists failures only in its summary: a parametrization
+// with a space doesn't cut the list short.
+func TestRerunPytestShortSummary(t *testing.T) {
+	if _, err := exec.LookPath("pytest"); err != nil {
+		t.Skip("needs pytest")
+	}
+	t.Setenv("PYTEST_ADDOPTS", "")
+	t.Setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+	t.Setenv("PYTHONDONTWRITEBYTECODE", "1")
+	repoFixture(t, map[string]string{
+		"tests/test_q.py": "import pytest\n\n\n@pytest.mark.parametrize(\"s\", [\"a b\", \"c\"])\ndef test_sp(s):\n    assert s == \"c\"\n\n\ndef test_a():\n    assert False\n",
+	})
+	checkRerun(t, []string{"pytest", "--tb=no", "-p", "no:cacheprovider", "tests"},
+		[]string{"pytest", "--tb=no", "-p", "no:cacheprovider", "tests/test_q.py::test_a", "tests/test_q.py::test_sp[a b]"},
+		"reruns the 2 failed tests", "tests/test_q.py::test_a", "tests/test_q.py::test_sp[a b]")
+}
+
+// A test that ended in an error isn't a failure crux lists: no rerun line
+// that would leave it out. pytest: an error at setup; go: a timeout.
+func TestRerunNotWithErrors(t *testing.T) {
+	noRerun := func(t *testing.T, cmd ...string) {
+		t.Helper()
+		code, out := text(t, cmd...)
+		if code == 0 || !strings.Contains(out, "next: seek ") || strings.Contains(out, "next: crux") {
+			t.Errorf("%s: exit %d, want the seek line and no rerun:\n%s", strings.Join(cmd, " "), code, out)
+		}
+		if d, _ := jsonRun(t, cmd...); len(d.Next) == 0 || strings.HasPrefix(d.Next[0].Cmd, "crux ") {
+			t.Errorf("%s --json: next %+v", strings.Join(cmd, " "), d.Next)
+		}
+	}
+	t.Run("go timeout", func(t *testing.T) {
+		if _, err := exec.LookPath("go"); err != nil {
+			t.Skip("needs go")
+		}
+		root := fixture(t)
+		edit(t, root, filesPath, "return out\n", "return out[:2]\n")
+		write(t, root, "internal/files/slow_test.go", "package files\n\nimport (\n\t\"testing\"\n\t\"time\"\n)\n\nfunc TestSlow(t *testing.T) { time.Sleep(5 * time.Second) }\n")
+		noRerun(t, "go", "test", "-count=1", "-timeout", "1s", "./...")
+	})
+	t.Run("pytest setup error", func(t *testing.T) {
+		if _, err := exec.LookPath("pytest"); err != nil {
+			t.Skip("needs pytest")
+		}
+		t.Setenv("PYTEST_ADDOPTS", "")
+		t.Setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+		t.Setenv("PYTHONDONTWRITEBYTECODE", "1")
+		repoFixture(t, map[string]string{
+			"tests/test_e.py": "import pytest\n\n\n@pytest.fixture\ndef broken():\n    raise RuntimeError(\"setup\")\n\n\ndef test_x(broken):\n    pass\n\n\ndef test_f():\n    assert False\n",
+		})
+		noRerun(t, "pytest", "-p", "no:cacheprovider", "tests")
+	})
+}
+
 // After a cargo test run, the rerun selects the test path cargo printed:
 // the module moved by #[path] has another one than its file's place.
 func TestRerunCargo(t *testing.T) {
@@ -133,22 +186,49 @@ func TestRerunNextNeedsEveryTest(t *testing.T) {
 	rs.SetRepo(info(t, root))
 	list := &digest.Item{Kind: "fail", Title: "TestList", Runner: "go test", Pkg: "internal/files"}
 	argv := []string{"go", "test", "./..."}
-	if got := rerunNext(argv, root, &digest.Report{Failures: []*digest.Item{list}}, rs); len(got) != 1 ||
+	if got := rerunNext(argv, root, nil, &digest.Report{Failures: []*digest.Item{list}}, rs); len(got) != 1 ||
 		got[0] != (report.Next{Cmd: "crux go test -run '^TestList$' ./internal/files/", Why: "reruns the 1 failed test"}) {
 		t.Errorf("rerunNext = %+v", got)
 	}
 	ghost := &digest.Item{Kind: "fail", Title: "TestGhost", Runner: "go test", Pkg: "internal/files"} // no definition found
+	write(t, root, "tests/test_x.py", "def test_a():\n    assert False\n")
+	py := &digest.Item{Kind: "fail", Title: "tests/test_x.py::test_a", Runner: "pytest"}
 	for name, fs := range map[string][]*digest.Item{
 		"a failure without its test": {list, ghost},
 		"too many failures":          repeat(list, maxRerun+1),
 		"no failures":                nil,
 	} {
-		if got := rerunNext(argv, root, &digest.Report{Failures: fs}, rs); got != nil {
+		if got := rerunNext(argv, root, nil, &digest.Report{Failures: fs}, rs); got != nil {
 			t.Errorf("%s: %+v", name, got)
 		}
 	}
-	if got := rerunNext([]string{"make", "test"}, root, &digest.Report{Failures: []*digest.Item{list}}, rs); got != nil {
+	if got := rerunNext([]string{"make", "test"}, root, nil, &digest.Report{Failures: []*digest.Item{list}}, rs); got != nil {
 		t.Errorf("make: %+v", got)
+	}
+
+	// every failed test the run names, and no errors
+	sub := &digest.Item{Kind: "fail", Title: "TestList/empty", Runner: "go test", Pkg: "internal/files"}
+	for name, c := range map[string]struct {
+		r     digest.Report
+		lines []string
+		ok    bool
+	}{
+		"go, all read":           {digest.Report{Failures: []*digest.Item{list}}, []string{"--- FAIL: TestList (0.00s)"}, true},
+		"go, a parent":           {digest.Report{Failures: []*digest.Item{sub}}, []string{"--- FAIL: TestList (0.00s)", "    --- FAIL: TestList/empty (0.00s)"}, true},
+		"go, one not read":       {digest.Report{Failures: []*digest.Item{list}}, []string{"--- FAIL: TestList (0.00s)", "--- FAIL: TestOther (0.00s)"}, false},
+		"go, an error":           {digest.Report{Failures: []*digest.Item{list}, Errors: []*digest.Item{{Kind: "error", Title: "panic: test timed out after 1s"}}}, nil, false},
+		"pytest, all read":       {digest.Report{Failures: []*digest.Item{py}, Tests: digest.Tests{Failed: 1}}, nil, true},
+		"pytest, fewer read":     {digest.Report{Failures: []*digest.Item{py}, Tests: digest.Tests{Failed: 3}}, nil, false},
+		"pytest, errors counted": {digest.Report{Failures: []*digest.Item{py}, Tests: digest.Tests{Failed: 1, Errors: 2}}, nil, false},
+		"two runners":            {digest.Report{Failures: []*digest.Item{list, py}, Tests: digest.Tests{Failed: 2}}, nil, false},
+	} {
+		argv := argv
+		if c.r.Failures[0].Runner == "pytest" {
+			argv = []string{"pytest", "tests"}
+		}
+		if got := rerunNext(argv, root, c.lines, &c.r, rs); (got != nil) != c.ok {
+			t.Errorf("%s: %+v", name, got)
+		}
 	}
 }
 

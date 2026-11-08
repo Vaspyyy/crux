@@ -221,6 +221,10 @@ var Relative string
 // fixtures come from elsewhere).
 var CheckFiles bool
 
+// CargoNoFailFast is set by the caller when the command passed cargo
+// --no-fail-fast, so the note that suggests it is left out.
+var CargoNoFailFast bool
+
 var locSuffixRe = regexp.MustCompile(`(:\d+){1,2}$`)
 
 // resolve checks that loc's file exists. Tools print paths relative to

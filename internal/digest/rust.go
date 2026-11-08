@@ -40,7 +40,9 @@ func rustDiag(s *state, i int) int {
 		switch {
 		case strings.HasPrefix(msg, "test failed, to rerun"):
 			s.tool("cargo")
-			s.r.Notes = append(s.r.Notes, "cargo stops at the first failing target: later targets and doctests didn't run (--no-fail-fast)")
+			if !CargoNoFailFast {
+				s.r.Notes = append(s.r.Notes, "cargo stops at the first failing target: later targets and doctests didn't run (--no-fail-fast)")
+			}
 			return i + 1
 		case strings.HasPrefix(msg, "could not compile"),
 			strings.Contains(msg, "generated ") && strings.Contains(msg, "warning"),

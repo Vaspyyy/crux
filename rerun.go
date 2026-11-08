@@ -2,6 +2,8 @@ package main
 
 import (
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Vaspyyy/prism/ref"
@@ -18,12 +20,15 @@ const maxRerun = nextItems
 // rerunNext is the next: line that reruns only the failed tests with the
 // run's own flags (Prism's testcmd.Rerun), worded by execution: "crux go
 // test -race -run '^TestList$' ./internal/files/   reruns the 1 failed
-// test". It needs every failure's test, since a rerun that left some out
-// would read as all of them, and none when Rerun can't make the command
+// test". A rerun that left a test out would read as all of them, so it
+// needs every failed test: none when the run had errors (a setup or
+// teardown error, a test that timed out), when the failures crux read
+// aren't all the run says failed (lines are the run's output), or when a
+// failure's test wasn't found; and none when Rerun can't make the command
 // exact (another runner, a flag it doesn't know). It comes from the run,
 // not from context, so --no-context keeps it.
-func rerunNext(argv []string, cwd string, r *digest.Report, rs *refs.Resolver) []report.Next {
-	if len(r.Failures) == 0 || len(r.Failures) > maxRerun {
+func rerunNext(argv []string, cwd string, lines []string, r *digest.Report, rs *refs.Resolver) []report.Next {
+	if len(r.Failures) == 0 || len(r.Failures) > maxRerun || len(r.Errors) > 0 || r.Tests.Errors > 0 || !allFailures(r, lines) {
 		return nil
 	}
 	info := rs.Repo()
@@ -45,6 +50,30 @@ func rerunNext(argv []string, cwd string, r *digest.Report, rs *refs.Resolver) [
 		return nil
 	}
 	return []report.Next{n}
+}
+
+// goFailRe is a failed test as go test prints it, read loosely so a line
+// the digest missed still counts.
+var goFailRe = regexp.MustCompile(`^\s*--- FAIL: (\S+)`)
+
+// allFailures reports whether the failures are all the tests the run
+// says failed: pytest's and cargo's own count, and for go every "--- FAIL"
+// a failure or the parent of one (a parent fails with its subtests).
+// (Failures from another runner than the command's, Rerun refuses.)
+func allFailures(r *digest.Report, lines []string) bool {
+	if r.Failures[0].Runner != "go test" {
+		return r.Tests.Failed == len(r.Failures)
+	}
+	for _, l := range lines {
+		m := goFailRe.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		if !slices.ContainsFunc(r.Failures, func(f *digest.Item) bool { return f.Title == m[1] || strings.HasPrefix(f.Title, m[1]+"/") }) {
+			return false
+		}
+	}
+	return true
 }
 
 // failedTest is a failure as Rerun takes it: its test's symbol, and the
