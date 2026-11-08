@@ -29,9 +29,12 @@ type Options struct {
 	Raw    bool
 	// Refs returns the lines that name the symbols an error or failure is
 	// in ("in <ref>", "test <ref>"), a ref optionally followed by context
-	// marks (" [changed]"). It's only called for items the report shows;
-	// nil prints none.
+	// marks (" [changed]"). It's called while planning, for items the
+	// report may show; nil prints none.
 	Refs func(*digest.Item) []string
+	// Shown is called for each item whose Refs lines the report prints
+	// (planning asks for more than fit).
+	Shown func(*digest.Item)
 	// Reserve is how many lines the caller adds after the report (next:
 	// lines); they come out of the budget.
 	Reserve int
@@ -122,7 +125,7 @@ func Report(run Run, r *digest.Report, o Options) string {
 	}
 
 	budget := max(o.Budget, 10)
-	w.items(r, budget, o.Reserve, ok, o.Refs)
+	w.items(r, budget, o.Reserve, ok, o.Refs, o.Shown)
 
 	if len(r.Notes) > 0 {
 		w.line("\nnotes:")
@@ -367,7 +370,7 @@ func (w *report) plan(r *digest.Report, budget, reserve int, ok bool, refs func(
 
 // items prints errors, failed tests and warnings as plan fits them into
 // the budget.
-func (w *report) items(r *digest.Report, budget, reserve int, ok bool, refs func(*digest.Item) []string) {
+func (w *report) items(r *digest.Report, budget, reserve int, ok bool, refs func(*digest.Item) []string, printed func(*digest.Item)) {
 	c := w.c
 	l := w.plan(r, budget, reserve, ok, refs)
 	shown, warnShown, withBody, in := l.shown, l.warnShown, l.withBody, l.in
@@ -406,6 +409,9 @@ func (w *report) items(r *digest.Report, budget, reserve int, ok bool, refs func
 			}
 		}
 		w.line("%s", clip(head))
+		if printed != nil && len(in[it]) > 0 {
+			printed(it)
+		}
 		for _, l := range in[it] {
 			word, ref, _ := strings.Cut(l, " ")
 			ref, marks, marked := strings.Cut(ref, " [")

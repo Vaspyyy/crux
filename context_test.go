@@ -391,8 +391,9 @@ func TestContextOutsideGit(t *testing.T) {
 	if code != 0 || strings.Contains(out, "context:") {
 		t.Errorf("exit %d:\n%s", code, out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
-		t.Errorf("wrote into %s: %v", dir, err)
+	// nothing may be written anywhere in the working directory (no prism/, no .git/)
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Errorf("wrote into %s: %v %v", dir, entries, err)
 	}
 }
 
@@ -483,7 +484,8 @@ func TestCandidatesNeedAUniqueName(t *testing.T) {
 	for _, c := range []struct{ refs, want []string }{
 		{[]string{"a.go:List", "b.go:Repo.Open", "c.go:File.Open"}, []string{"a.go:List"}},
 		{[]string{"a.go:List", "a.go:List"}, []string{"a.go:List"}},
-		{[]string{"a.go:Queue.Push", "lib.cpp:parse#2"}, []string{"a.go:Queue.Push", "lib.cpp:parse#2"}},
+		// "#2" means the file has another parse: the name doesn't say which
+		{[]string{"a.go:Queue.Push", "lib.cpp:parse#2"}, []string{"a.go:Queue.Push"}},
 	} {
 		var got []string
 		for _, cand := range candidatesOf(c.refs) {
@@ -558,7 +560,7 @@ func run(q *Queue) []string {
 	_, out := text(t, printed("# example.com/fixture/internal/files", "internal/files/run.go:9:9: not enough arguments in call to List")...)
 	want := []string{
 		"next: recap --show " + listRef + "       the uncommitted change to List, which run mentions",
-		"next: recap --show internal/files/run.go:Queue.Push   the uncommitted change to Queue.Push; run mentions Push",
+		"next: recap --show internal/files/run.go:Queue.Push   the uncommitted change to Queue.Push; run mentions Queue and Push",
 	}
 	if got := nextOf(out); !strings.Contains(out, "    in internal/files/run.go:run\n") || !reflect.DeepEqual(got, want) {
 		t.Errorf("next %q, want %q, report:\n%s", got, want, out)
@@ -650,5 +652,165 @@ func TestHelper(t *testing.T) {
 	_, cOff := jsonRun(t, append([]string{"--no-context"}, goTest...)...)
 	if f := find(cOff.Failures, "TestList"); f.TestMarks != nil {
 		t.Errorf("--no-context test marks %q", f.TestMarks)
+	}
+}
+
+// A mention is a name in the symbol's text that isn't its own: a method
+// needs its type's name too, and a symbol never mentions another of its
+// own name by being declared.
+func TestMentioned(t *testing.T) {
+	cands := candidatesOf([]string{"server.go:Server.Start", "files.go:List", "q.go:Queue.Push", "a.go:Run"})
+	words := func(s string) map[string]bool {
+		w := map[string]bool{}
+		for _, f := range strings.Fields(s) {
+			w[f] = true
+		}
+		return w
+	}
+	for _, c := range []struct {
+		sym, text string
+		want      []string
+	}{
+		{"client.go:Client.Start", "func c Client Start error", nil}, // declares Start, never names Server
+		{"client.go:Client.Start", "Client Start Server", nil},       // its own name is Start
+		{"x_test.go:TestList", "TestList List got want", []string{"files.go:List"}},
+		{"x.go:run", "run q Push", nil}, // a Push, but whose?
+		{"x.go:run", "run q Queue Push", []string{"q.go:Queue.Push"}},
+		{"x.go:Queue.Len", "Queue Len Push", []string{"q.go:Queue.Push"}}, // a sibling method's call
+		{"q.py:Queue", "Queue items Push", nil},                           // a class holds the names of its members
+		{"a.go:Run", "Run Run", nil},                                      // itself
+		{"b.go:Run", "Run List", []string{"files.go:List"}},
+	} {
+		var got []string
+		for _, m := range mentioned(c.sym, words(c.text), cands) {
+			got = append(got, m.ref)
+		}
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s with %q: got %q, want %q", c.sym, c.text, got, c.want)
+		}
+	}
+}
+
+// The reviewer's case: a compile error in Client.Start, which shares the
+// name of the changed Server.Start but never refers to it, suggests
+// nothing.
+func TestContextNoMentionByOwnName(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "internal/net/net.go", `package net
+
+type Server struct{}
+
+func (s *Server) Start() error { return nil }
+
+type Client struct{}
+
+func (c *Client) Start() error {
+	return dial()
+}
+`)
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "net")
+	edit(t, root, "internal/net/net.go", "func (s *Server) Start() error { return nil }", "func (s *Server) Start() error { return start() }")
+	_, out := text(t, printed("# example.com/fixture/internal/net", "internal/net/net.go:10:9: undefined: dial")...)
+	if !strings.Contains(out, "    in internal/net/net.go:Client.Start\n") || len(nextOf(out)) != 0 || strings.Contains(out, "context:") {
+		t.Errorf("report:\n%s", out)
+	}
+}
+
+// The context: line names only layers whose marks the report prints: a
+// mark on in or test lines the budget leaves out doesn't count.
+func TestContextLineNamesOnlyPrintedMarks(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "internal/files/run.go", "package files\n\nfunc Other() int {\n\treturn 1\n}\n")
+	write(t, root, "internal/check/check_test.go", `package check
+
+import "testing"
+
+func check(t *testing.T, ok bool) {
+	if !ok {
+		t.Error("not ok")
+	}
+}
+
+func TestF(t *testing.T) {
+	check(t, false)
+}
+`)
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "more")
+	head := git(t, root, "rev-parse", "HEAD")
+	if err := focus.Open(info(t, root)).SetFocus("recap", focus.Focus{Range: head[:7], Old: head, New: head, Symbols: []string{"internal/check/check_test.go:TestF"}}); err != nil {
+		t.Fatal(err)
+	}
+	edit(t, root, filesPath, "return out\n", "return outt\n")
+	edit(t, root, "internal/files/run.go", "return 1", "return one")
+	goTest := printed("# example.com/fixture/internal/files", "internal/files/files.go:10:9: undefined: outt",
+		"internal/files/run.go:4:9: undefined: one", "--- FAIL: TestF (0.00s)", "    check_test.go:7: not ok", "FAIL",
+		"FAIL\texample.com/fixture/internal/check\t0.002s", "FAIL\texample.com/fixture/internal/files [build failed]", "FAIL")
+	// tight budgets plan the failure's lines but drop them; roomy ones print them
+	seen := map[bool]bool{}
+	for budget := 10; budget <= 30; budget++ {
+		_, out := text(t, append([]string{"-b", fmt.Sprint(budget)}, goTest...)...)
+		printedFocus := strings.Contains(out, "[focus]")
+		named := strings.Contains(strings.SplitN(out, "\n", 2)[0], "focus:")
+		if printedFocus != named || !strings.HasPrefix(out, "context: 2 changed symbols vs HEAD") {
+			t.Errorf("-b %d: [focus] printed %v, named %v:\n%s", budget, printedFocus, named, out)
+		}
+		seen[printedFocus] = true
+	}
+	if !seen[true] || !seen[false] {
+		t.Errorf("the budgets should both show and leave out the failure's lines: %v", seen)
+	}
+}
+
+// Once the report is out, the suggestions and the record only parse a
+// little more source, so many errors in big files don't delay the exit:
+// the record names what was affordable, failed tests first.
+func TestRecordParsesLittleAfterTheReport(t *testing.T) {
+	root := fixture(t)
+	var body strings.Builder
+	for j := range 400 { // about 20 KB a file
+		fmt.Fprintf(&body, "func F%d(x int) int {\n\treturn x + %d\n}\n\n", j, j)
+	}
+	lines := []string{"# example.com/fixture/internal/big"}
+	for i := range 40 {
+		write(t, root, fmt.Sprintf("internal/big/f%02d.go", i), "package big\n\n"+body.String())
+		lines = append(lines, fmt.Sprintf("internal/big/f%02d.go:4:9: undefined: z%d", i, i))
+	}
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "big")
+	lines = append(lines, "--- FAIL: TestList (0.00s)", "    files_test.go:12: List = [a b], want [a b c]", "FAIL",
+		"FAIL\texample.com/fixture/internal/files\t0.002s", "FAIL\texample.com/fixture/internal/big [build failed]", "FAIL")
+	text(t, printed(lines...)...)
+	lr := lastRunOf(t, root)
+	if lr == nil || !slices.Contains(lr.Tests, testRef) || !slices.Contains(lr.In, "internal/big/f00.go:F0") {
+		t.Fatalf("last run %+v", lr)
+	}
+	// 40 files of 20 KB: the report's own and about six more fit, never all
+	if n := len(lr.In); n >= 20 {
+		t.Errorf("the record parsed %d files after the report", n)
+	}
+}
+
+// A run that was killed by a signal or interrupted may have stopped early:
+// its record would drop failures it never got to, so the old one stays.
+func TestNoRecordForSignalsAndInterrupts(t *testing.T) {
+	root := fixture(t)
+	store := focus.Open(info(t, root))
+	if err := store.SetLastRun("crux", focus.LastRun{Cmd: "go test ./...", Exit: 1, Tests: []string{testRef}}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := text(t, "sh", "-c", "kill -TERM $$"); code != 143 {
+		t.Errorf("exit %d", code)
+	}
+	if lr := store.LastRun(); lr == nil || lr.Cmd != "go test ./..." {
+		t.Errorf("after a signal: %+v", lr)
+	}
+	// Ctrl+C reaches crux, which passes it on; the command catches it and
+	// exits normally (as pytest does), but the run was still cut short.
+	// crux runs in this process, so the command interrupts its parent.
+	code, _ := text(t, "sh", "-c", `trap 'exit 2' INT; sleep 0.3; kill -INT $PPID; sleep 5`)
+	if lr := store.LastRun(); code != 2 || lr == nil || lr.Cmd != "go test ./..." {
+		t.Errorf("after an interrupt: exit %d, %+v", code, lr)
 	}
 }

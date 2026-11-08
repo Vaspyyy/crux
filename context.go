@@ -24,6 +24,11 @@ const (
 	maxRecorded    = focus.MaxSymbols // errors and failures the last-run record looks at
 	nextItems      = 20               // errors and failures next: lines look at
 	maxContextNext = 2                // next: lines that come from context
+	// refsAfterReport is how much more source (bytes) context's next: lines
+	// and the last-run record may parse once the report is out, about 2 ms:
+	// the files the report needed are parsed already, and the rest only add
+	// marks, so they mustn't delay the exit.
+	refsAfterReport = 64 << 10
 )
 
 // runContext is the context of one run, loaded while the command runs.
@@ -65,39 +70,60 @@ func (c *runContext) wait() (*repo.Info, *work.State) {
 }
 
 // markedLines is the report's "in" and "test" lines with the context marks
-// of their symbols: "in internal/group/group.go:multiline [changed]".
+// of their symbols: "in internal/group/group.go:multiline [changed]". It
+// only peeks, since the report asks for more lines than it prints; shown
+// counts the marks of the lines it does print.
 func markedLines(rs *refs.Resolver, st *work.State) func(*digest.Item) []string {
 	return func(it *digest.Item) []string {
 		ls := rs.Lines(it)
 		for i, l := range ls {
 			if word, r, ok := strings.Cut(l, " "); ok && (word == "in" || word == "test") {
-				ls[i] = l + work.Suffix(st.Marks(r))
+				ls[i] = l + work.Suffix(st.Peek(r))
 			}
 		}
 		return ls
 	}
 }
 
+// shown counts the marks on an item's printed "in" and "test" lines as
+// shown, so the context: line names their layers.
+func shown(rs *refs.Resolver, st *work.State) func(*digest.Item) {
+	return func(it *digest.Item) {
+		in, test := rs.Refs(it)
+		for _, r := range []string{in, test} {
+			if r != "" {
+				st.Show(st.Peek(r)...)
+			}
+		}
+	}
+}
+
 // lastRun is the record of a finished run that seek and recap read: the
 // command, its exit code, the failed tests and the symbols errors and
 // failures are in. The store drops duplicates (and a failed test that
-// contains its own failure from In) and caps the lists; this only bounds
-// the lookups.
+// contains its own failure from In) and caps the lists. It names what the
+// resolver can still afford (see refsAfterReport): failures first, as
+// their tests matter most, then errors, then folded errors' other
+// locations; refs it can't afford are left out, which only costs marks.
 func lastRun(argv []string, exit int, r *digest.Report, rs *refs.Resolver) focus.LastRun {
 	lr := focus.LastRun{Cmd: report.Cmd(argv...), Exit: exit}
-	looked := 0
 	add := func(list *[]string, ref string) {
 		if ref != "" {
 			*list = append(*list, ref)
 		}
 	}
-	for _, it := range errorsAndFailures(r, maxRecorded) {
+	items := append(append([]*digest.Item{}, r.Failures...), r.Errors...)
+	items = items[:min(len(items), maxRecorded)]
+	for _, it := range items {
 		in, test := rs.Refs(it)
 		add(&lr.Tests, test)
 		add(&lr.In, in)
+	}
+	looked := 0
+	for _, it := range items {
 		for _, at := range it.Locs { // the other locations of folded errors
-			if looked++; looked > 2*maxRecorded {
-				break
+			if looked++; looked > maxRecorded {
+				return lr
 			}
 			at, missing := strings.CutSuffix(at, " (not found)")
 			add(&lr.In, rs.In(at, missing))
@@ -113,55 +139,66 @@ func errorsAndFailures(r *digest.Report, n int) []*digest.Item {
 	return its[:min(len(its), n)]
 }
 
-// suggest returns the next: lines, at most report.MaxNext: from context,
-// recap for a changed or focus symbol that an error or failure is in, that
-// failed, or that the symbol or failed test mentions; and without context,
-// seek for the first failed test's definition. The wording follows the
-// evidence: "in" for a location, "mentions" for a name found in the text,
-// "failed" for a test run.
-func suggest(r *digest.Report, rs *refs.Resolver, st *work.State) (fromContext, plain []report.Next) {
+// plainNext is the next: line that needs no context: seek for the first
+// failed test's definition.
+func plainNext(r *digest.Report, rs *refs.Resolver) []report.Next {
 	for _, it := range r.Failures[:min(len(r.Failures), nextItems)] {
 		if _, test := rs.Refs(it); test != "" {
-			plain = append(plain, report.Next{Cmd: report.Cmd("seek", test), Why: "the failed test's definition"})
-			break
+			return []report.Next{{Cmd: report.Cmd("seek", test), Why: "the failed test's definition"}}
 		}
 	}
-	if st == nil || st.Off || st.Changes == nil && st.Focus == nil {
-		return nil, plain
+	return nil
+}
+
+// contextNext returns the next: lines only context gives a reason for, at
+// most room: recap for a changed or focus symbol that an error or failure
+// is in, that failed, or that the symbol or failed test mentions. The
+// wording follows the evidence: "in" for a location, "mentions" for a
+// name found in the text, "failed" for a test run.
+func contextNext(r *digest.Report, rs *refs.Resolver, st *work.State, room int) []report.Next {
+	cands := candidates(st)
+	if len(cands) == 0 || room <= 0 { // nothing changed and no focus: nothing to suggest
+		return nil
 	}
-	room := min(maxContextNext, report.MaxNext-len(plain))
+	var out []report.Next
 	seen := map[string]bool{}
 	add := func(sym, tail string) {
-		if len(fromContext) >= room || seen[sym] {
+		if len(out) >= room || seen[sym] {
 			return
 		}
 		if cmd, change, mark := recap(st, sym); cmd != "" {
 			seen[sym] = true
 			st.Used(mark) // the context: line names the layer the suggestion rests on
 			st.Use(work.Suggest)
-			fromContext = append(fromContext, report.Next{Cmd: cmd, Why: change + tail})
+			out = append(out, report.Next{Cmd: cmd, Why: change + tail})
 		}
+	}
+	// only files with a changed or focus symbol can hold a marked one, so
+	// the others aren't parsed for it
+	marked := map[string]bool{}
+	for _, c := range cands {
+		marked[ref.Parse(c.ref, nil).Path] = true
 	}
 	items := errorsAndFailures(r, nextItems)
 	// location and execution: what an error or failure is in, and failed tests
 	for _, it := range items {
-		in, test := rs.Refs(it)
 		where := ", where the error is"
 		if it.Kind == "fail" {
 			where = ", where the failure is"
 		}
-		if in != "" {
-			add(in, where)
+		if l := rs.Location(it.Loc, it.Missing); l != nil && marked[l.Path] {
+			add(rs.In(it.Loc, it.Missing), where)
 		}
-		if test != "" && test != in {
-			add(test, ", the failed test")
+		if it.Kind == "fail" {
+			if in, test := rs.Refs(it); test != "" && test != in {
+				add(test, ", the failed test")
+			}
 		}
 	}
 	// reference: changed and focus symbols mentioned by name in the symbol
 	// an error is in, or in a failed test
-	cands := candidates(st)
 	for _, it := range items {
-		if len(fromContext) >= room {
+		if len(out) >= room {
 			break
 		}
 		in, test := rs.Refs(it)
@@ -172,30 +209,49 @@ func suggest(r *digest.Report, rs *refs.Resolver, st *work.State) (fromContext, 
 		if sym == "" {
 			continue
 		}
-		words := rs.Words(sym)
-		for _, c := range cands {
-			if c.ref != sym && words[c.short] {
-				tail := ", which " + name(sym) + " mentions"
-				if c.short != name(c.ref) {
-					tail = "; " + name(sym) + " mentions " + c.short
-				}
-				add(c.ref, tail)
+		for _, c := range mentioned(sym, rs.Words(sym), cands) {
+			if c.owner == "" {
+				add(c.ref, ", which "+name(sym)+" mentions")
+			} else {
+				add(c.ref, "; "+name(sym)+" mentions "+c.owner+" and "+c.short)
 			}
 		}
 	}
-	return fromContext, plain
+	return out
+}
+
+// mentioned returns the candidates whose names the symbol sym mentions:
+// its words hold the candidate's name, and for a method or other member
+// (Queue.Push) also its owner's (Queue), since a bare Push may be any
+// type's. A symbol's own name doesn't count, nor a candidate with the same
+// name as sym (Client.Start doesn't mention Server.Start by declaring
+// Start).
+func mentioned(sym string, words map[string]bool, cands []candidate) []candidate {
+	own := shortName(name(sym))
+	var out []candidate
+	for _, c := range cands {
+		if c.ref == sym || c.short == own || !words[c.short] || c.owner != "" && (c.owner == own || !words[c.owner]) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // candidate is a changed or focus symbol a failed test or a symbol with an
-// error may mention.
-type candidate struct{ ref, short string }
+// error may mention: short is its name as code calls it (Push), owner the
+// type or symbol it's a member of (Queue), "" for a top-level one.
+type candidate struct{ ref, short, owner string }
 
-// candidates returns the changed and focus symbols, in order, whose short
-// name (the last part of a qualified name, as code calls it) belongs to
-// only one of them: a name two symbols share doesn't say which one is
-// meant.
+// candidates returns the changed and focus symbols, in order, that a
+// mention can name: whose name belongs to only one of them, and to only
+// one symbol in its file (a ref with "#2" means there's another). A name
+// two symbols share doesn't say which one is meant.
 func candidates(st *work.State) []candidate {
 	var refs []string
+	if st == nil || st.Off {
+		return nil
+	}
 	if st.Changes != nil {
 		for _, s := range st.Changes.Symbols {
 			refs = append(refs, s.Ref)
@@ -211,8 +267,15 @@ func candidatesOf(refs []string) []candidate {
 	byShort := map[string]map[string]bool{}
 	var out []candidate
 	for _, r := range refs {
-		n := name(r)
-		short := n[strings.LastIndexByte(n, '.')+1:]
+		pr := ref.Parse(r, nil)
+		if pr.Name == "" || pr.Ordinal > 0 {
+			continue
+		}
+		short := shortName(pr.Name)
+		owner := ""
+		if parts := strings.Split(pr.Name, "."); len(parts) > 1 {
+			owner = parts[len(parts)-2]
+		}
 		if short == "" {
 			continue
 		}
@@ -221,7 +284,7 @@ func candidatesOf(refs []string) []candidate {
 		}
 		if !byShort[short][r] {
 			byShort[short][r] = true
-			out = append(out, candidate{r, short})
+			out = append(out, candidate{r, short, owner})
 		}
 	}
 	unique := out[:0]
@@ -232,6 +295,9 @@ func candidatesOf(refs []string) []candidate {
 	}
 	return unique
 }
+
+// shortName is the last part of a qualified name: Push for Queue.Push.
+func shortName(n string) string { return n[strings.LastIndexByte(n, '.')+1:] }
 
 // recap returns the recap command that shows what changed in a symbol
 // that context marks, that change in words, and the mark it rests on; ""

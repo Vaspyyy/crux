@@ -204,27 +204,31 @@ func run(args []string) int {
 	info, st := ctx.wait()
 	resolver := refs.New(cwd)
 	resolver.SetRepo(info)
-	// the run is recorded once it's reported, pass or fail, so an old
-	// failure doesn't outlive its fix; never a reason to fail or wait
+	// The run is recorded once it's reported, pass or fail, so an old
+	// failure doesn't outlive its fix. Not recorded: a run that never
+	// started (above), and one that was interrupted or killed by a signal,
+	// whose partial failures would replace a complete record. Never a
+	// reason to fail.
 	defer func() {
-		if st.Store != nil {
+		if st.Store != nil && res.Signal == 0 && !res.Interrupted {
 			st.Store.SetLastRun("crux", lastRun(argv, res.Exit, r, resolver))
 		}
 	}()
-	var fromContext, plain []report.Next
+	var plain []report.Next
 	if !o.raw {
-		fromContext, plain = suggest(r, resolver, st)
+		plain = plainNext(r, resolver)
 	}
-	next := append(fromContext, plain...)
+	room := min(maxContextNext, report.MaxNext-len(plain))
 	// next: lines that don't depend on context come out of the budget;
 	// the context: line and context's suggestions come on top, so turning
 	// context on never takes room from errors, failures or warnings
-	ropts := render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: markedLines(resolver, st), Reserve: len(plain)}
+	ropts := render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: markedLines(resolver, st), Shown: shown(resolver, st), Reserve: len(plain)}
 	if o.json {
 		e := report.New("crux", version, o.args, repoOr(resolver.Repo(), cwd))
 		e.Result, e.Truncated = result(rr, r, resolver, o, st, ropts.Reserve)
+		resolver.Limit(refsAfterReport)
+		e.Next = append(append(e.Next, contextNext(r, resolver, st, room)...), plain...)
 		e.Context = st.Context()
-		e.Next = append(e.Next, next...)
 		report.Write(os.Stdout, e)
 		return res.Exit
 	}
@@ -234,9 +238,12 @@ func run(args []string) int {
 	if o.raw { // stdout is the cleaned output and nothing else
 		fmt.Fprint(os.Stderr, render.Header(rr, color && term.IsTerminal(int(os.Stderr.Fd()))))
 		fmt.Print(render.Report(rr, r, ropts))
+		resolver.Limit(refsAfterReport)
 		return res.Exit
 	}
-	body := render.Report(rr, r, ropts) // hands out the marks the context: line names
+	body := render.Report(rr, r, ropts) // shows the marks the context: line names
+	resolver.Limit(refsAfterReport)
+	next := append(contextNext(r, resolver, st, room), plain...)
 	fmt.Print(contextLine(st.Line(), color) + body + nextLines(next, color))
 	return res.Exit
 }
