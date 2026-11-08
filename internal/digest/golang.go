@@ -79,7 +79,7 @@ func goTestFailure(s *state, i int) int {
 	}
 	s.tool("go test")
 	indent, name := len(m[1]), m[2]
-	it := &Item{Kind: "fail", Title: name}
+	it := &Item{Kind: "fail", Title: name, Runner: "go test"}
 	body := append([]string(nil), s.goLogs[name]...)
 	end := i + 1
 	for end < len(s.lines) {
@@ -175,7 +175,7 @@ func goPanic(s *state, i int) int {
 		// a panic in a goroutine a test started: no "--- FAIL" line is
 		// printed, but it is that test's failure and it ends the package
 		s.tool("go test")
-		f := &Item{Kind: "fail", Title: it.testFunc, Loc: it.testLoc, Body: []string{it.Title}}
+		f := &Item{Kind: "fail", Title: it.testFunc, Loc: it.testLoc, Body: []string{it.Title}, Runner: "go test"}
 		if f.Loc == "" {
 			f.Loc = it.Loc
 		} else if it.Loc != "" && it.Loc != it.testLoc {
@@ -199,6 +199,7 @@ func goPackageDone(s *state, pkg string) {
 	}
 	dir := goPkgDir(pkg)
 	for _, it := range s.goPending {
+		it.Pkg = dir
 		switch {
 		case it.Loc != "" && !strings.Contains(it.Loc, "/") && dir != "":
 			it.Loc = path.Join(dir, it.Loc)

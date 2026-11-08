@@ -60,9 +60,9 @@ func pytestSections(s *state, i int) int {
 			if b == nil {
 				break
 			}
-			it := &Item{Kind: "fail", Title: b[1]}
+			it := &Item{Kind: "fail", Title: b[1], Runner: "pytest"}
 			if m[1] == "ERRORS" { // collection or fixture errors: no test ran
-				it.Kind = "error"
+				it.Kind, it.Runner = "error", ""
 			}
 			end++
 			var raised string
@@ -130,7 +130,7 @@ func pytestSections(s *state, i int) int {
 				break
 			}
 			if !have && sm[1] == "FAILED" { // --tb=no/line runs only have this list
-				it := &Item{Kind: "fail", Title: sm[2]}
+				it := &Item{Kind: "fail", Title: sm[2], Runner: "pytest"}
 				if sm[3] != "" {
 					it.Body = []string{sm[3]}
 				}

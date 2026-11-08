@@ -13,6 +13,7 @@ tests: 400 passed, 2 failed
 
 2 failed tests:
   tests::sq_overflow  src/lib.rs:406:32
+    in src/lib.rs:tests.sq_overflow
     assertion `left == right` failed: 3 squared
       left: 9
      right: 10
@@ -44,10 +45,11 @@ crux execs the command directly, with no shell. Verified:
 - `tests:` appears for every recognised test run and sums passed, failed, errors, xpassed, skipped and xfailed, using the tool's own summary. `no tests ran, 1 error` means collection failed. `no tests ran` alone means nothing was collected or a `-run` filter matched nothing. Go without `-v` only reports packages (`3/3 packages ok, 1 package without tests`), so there's no per-test count then.
 - `errors:` compiler and runtime errors with `file:line:col` and the code frame (or the frames of a stack trace that are in your code). The count is the true total. When three or more errors are the same (message and, for Rust, the expected/found detail) they are folded: `E0308: mismatched types ×12`, the first one's frame, and `also at` with every other location. Errors outside tests (pytest collection or fixture errors) are listed here, not as failed tests.
 - `failed tests:` test name, location, and the assertion or panic message. A Go test that panicked, also from a goroutine it started, is located at its line in the `_test.go` file, with `panicked at file:line` in the message. Go locations include the package folder.
+- `in <ref>` under an error or failure: the innermost function, method or type containing its location, as a ref (`internal/group/group.go:multiline`; `Repo.Open` for a method, `parse#2` for the second of two definitions with one name, paths relative to the repo root). It means the line lies inside that definition (outline rules, not a compiler). `test <ref>` names the failing test's own definition when it's a different symbol (the assertion is in a helper); a failure without a location gets `in <test ref>`. Both go as is to seek (`seek <ref>`: definition and callers) and recap (`recap --show <ref>`). No line for files outside the repo, lines outside any definition, or warnings.
 - `warnings:` folded by kind, with every name and location: `unused variable [-Wunused-variable] ×2: ‘unused’, ‘y’` / `also at main.c:4:9`.
 - Locations work from the current directory: paths a tool printed relative to its own root (a cargo workspace, `make -C`) are rewritten (`../main.c:4:20`). `(file not found from here)` means the file exists nowhere crux looked, usually a stale cache.
 - `notes:` things that make a run less complete than it looks: cargo stopping at the first failing test target, a Go panic ending the rest of its package, a `-run` filter matching nothing, pytest stopping after collection errors, `-x` or Ctrl+C, or a package that failed to build. If there are notes, read them before trusting the counts.
-- The budget is soft. The first error or failure always keeps its explanation and every error and failure gets a line (beyond 30, as many as fit); anything cut is announced as `… and N more errors not shown`.
+- The budget is soft. The first error or failure always keeps its explanation and `in` line, and every error and failure gets a line (beyond 30, as many as fit); anything cut is announced as `… and N more errors not shown`.
 - `last lines:` the true end of the output, shown when nothing structured explains a failure. For successful non-test commands the output (or its end) is shown.
 - Unrecognised output of 20 lines or fewer is printed whole under the verdict line. Lines longer than 300 characters are clipped with `…[+N chars]`, keeping a location at the end of the line.
 - Recognised: cargo/rustc, go build/test/vet, pytest and Python tracebacks, tsc, gcc/clang, make, javac, eslint, Node errors, npm. Anything else falls back to error-looking lines plus the end of the output.

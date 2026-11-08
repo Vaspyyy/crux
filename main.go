@@ -16,6 +16,7 @@ import (
 
 	"github.com/Vaspyyy/crux/internal/digest"
 	"github.com/Vaspyyy/crux/internal/logstore"
+	"github.com/Vaspyyy/crux/internal/refs"
 	"github.com/Vaspyyy/crux/internal/render"
 	"github.com/Vaspyyy/crux/internal/runner"
 )
@@ -175,7 +176,7 @@ func run(args []string) int {
 	if o.raw { // stdout is the cleaned output and nothing else
 		fmt.Fprint(os.Stderr, render.Header(rr, color && term.IsTerminal(int(os.Stderr.Fd()))))
 	}
-	fmt.Print(render.Report(rr, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw}))
+	fmt.Print(render.Report(rr, r, render.Options{Color: color, Budget: o.budget, Raw: o.raw, Refs: refs.New(cwd).Lines}))
 	return res.Exit
 }
 

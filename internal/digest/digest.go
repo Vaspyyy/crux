@@ -25,6 +25,12 @@ type Item struct {
 	// Missing: the location's file doesn't exist relative to the working
 	// directory (a stale cache, a path relative to another root)
 	Missing bool
+	// Runner is the test runner that reported a failure: "go test",
+	// "pytest" or "cargo test". With the title it identifies the test.
+	Runner string
+	// Pkg is a go test failure's package directory, relative to the
+	// working directory ("" if unknown).
+	Pkg string
 }
 
 // Tests counts test results; -1 means the tool didn't say.

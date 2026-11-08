@@ -212,3 +212,52 @@ func TestLongGoFailureMessageIsKept(t *testing.T) {
 		t.Errorf("message cut short:\n%s", out)
 	}
 }
+
+// The symbols an error is in go right under its line and count against the
+// budget: the first error keeps its ref with its frame, the others get
+// theirs before any other frame, and nothing is looked up for items that
+// aren't shown, warnings or raw output.
+func TestRefsLinesCountAgainstTheBudget(t *testing.T) {
+	report := func(errors, budget int, raw bool) (string, map[string]int) {
+		r := &digest.Report{Structured: true, Meaningful: make([]string, 50)}
+		for i := range errors {
+			r.Errors = append(r.Errors, &digest.Item{Kind: "error", Title: fmt.Sprintf("problem %d", i), Loc: fmt.Sprintf("a.go:%d:1", i+1),
+				Body: []string{"  frame", "  ^"}, Count: 1})
+		}
+		r.Warnings = []*digest.Item{{Kind: "warning", Title: "unused", Loc: "a.go:99:1", Count: 1}}
+		calls := map[string]int{}
+		refs := func(it *digest.Item) []string {
+			calls[it.Title]++
+			return []string{"in a.go:F" + strings.TrimSuffix(strings.TrimPrefix(it.Loc, "a.go:"), ":1")}
+		}
+		out := Report(Run{Argv: []string{"go"}, Exit: 1, Lines: make([]string, 50)}, r, Options{Budget: budget, Raw: raw, Refs: refs})
+		return out, calls
+	}
+	out, calls := report(5, 60, false)
+	for i := 1; i <= 5; i++ {
+		if want := fmt.Sprintf("  a.go:%d:1  problem %d\n    in a.go:F%d\n      frame\n", i, i-1, i); !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
+	}
+	if len(calls) != 5 || calls["unused"] > 0 {
+		t.Errorf("refs looked up for %v", calls)
+	}
+
+	out, calls = report(5, 14, false)
+	if !strings.Contains(out, "  a.go:1:1  problem 0\n    in a.go:F1\n      frame\n") || strings.Contains(out, "in a.go:F2") ||
+		!strings.Contains(out, "  a.go:5:1  problem 4\n") {
+		t.Errorf("a tight budget keeps the first ref and lists every error:\n%s", out)
+	}
+	if len(calls) != 1 {
+		t.Errorf("refs looked up for items with no room for them: %v", calls)
+	}
+
+	out, calls = report(40, 30, false)
+	if !strings.Contains(out, "10 more errors not shown") || calls["problem 35"] > 0 || len(calls) > 30 {
+		t.Errorf("refs looked up for hidden errors: %v\n%s", calls, out)
+	}
+
+	if out, calls = report(5, 60, true); strings.Contains(out, "in a.go") || len(calls) > 0 {
+		t.Errorf("raw output has refs: %v\n%s", calls, out)
+	}
+}
