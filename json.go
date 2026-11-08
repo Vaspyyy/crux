@@ -79,14 +79,15 @@ func items(its []*digest.Item, n int, rs *refs.Resolver, st *work.State, cut *cu
 // item is one error, failure or warning. loc.in and test are the refs the
 // text prints as "in" and "test" lines (a failure without a location has
 // no loc, and its test names it); folded errors' other locations get
-// theirs too, and each location the context marks of the symbol in in.
+// theirs too, each location the context marks of the symbol in in, and
+// the test its own (test_marks).
 func item(it *digest.Item, rs *refs.Resolver, st *work.State, cut *cut) report.CruxItem {
 	ci := report.CruxItem{Kind: it.Kind, Title: it.Title}
 	if it.Count > 1 && it.Norm != "" {
 		ci.Title = it.Norm // folded warnings: the message without the names, which go in names
 	}
 	in, test := rs.Refs(it)
-	ci.Test = test
+	ci.Test, ci.TestMarks = test, marks(st, test)
 	if ci.Loc = rs.Location(it.Loc, it.Missing); ci.Loc != nil {
 		ci.Loc.In, ci.Loc.Marks = in, marks(st, in)
 		ci.Missing = it.Missing
@@ -112,12 +113,13 @@ func item(it *digest.Item, rs *refs.Resolver, st *work.State, cut *cut) report.C
 	return ci
 }
 
-// marks returns the context marks of the symbol a location is in.
-func marks(st *work.State, in string) []string {
-	if in == "" {
+// marks returns the context marks of a symbol the result names, counted
+// as shown.
+func marks(st *work.State, sym string) []string {
+	if sym == "" {
 		return nil
 	}
-	return st.Marks(in)
+	return st.Marks(sym)
 }
 
 // distinct returns folded warnings' names once each, in order, without

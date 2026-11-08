@@ -7,9 +7,9 @@ package main
 // never changes which errors and failures the report lists.
 
 import (
-	"os"
 	"strings"
 
+	"github.com/Vaspyyy/prism/changes"
 	"github.com/Vaspyyy/prism/focus"
 	"github.com/Vaspyyy/prism/ref"
 	"github.com/Vaspyyy/prism/repo"
@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	maxRecorded    = focus.MaxSymbols // errors and failures the last-run record looks at, and refs it keeps per list
+	maxRecorded    = focus.MaxSymbols // errors and failures the last-run record looks at
 	nextItems      = 20               // errors and failures next: lines look at
 	maxContextNext = 2                // next: lines that come from context
 )
@@ -40,22 +40,20 @@ type runContext struct {
 // It runs while the command does, so its git calls run beside the
 // command's own. git status would take the index lock to write back a
 // refreshed index, and a command that writes the index in that moment
-// (git add in a script) would fail on the lock, so these calls run with
-// GIT_OPTIONAL_LOCKS=0, as editors run their background git status. The
-// command's environment is taken before, so it doesn't get the variable.
+// (git add in a script) would fail on the lock, so it runs without the
+// optional lock (changes.Options.NoLocks), as editors run their background
+// git status.
 func loadContext(cwd string, layers work.Layer, off bool) *runContext {
 	c := &runContext{done: make(chan struct{})}
 	if off {
-		c.st = work.Load(nil, 0, true)
+		c.st = work.LoadWith(nil, work.Options{Off: true})
 		close(c.done)
 		return c
 	}
-	restore := setenv("GIT_OPTIONAL_LOCKS", "0")
 	go func() {
 		defer close(c.done)
-		defer restore()
 		c.info, _ = repo.Detect(cwd)
-		c.st = work.Load(c.info, layers, false)
+		c.st = work.LoadWith(c.info, work.Options{Layers: layers, Changes: changes.Options{NoLocks: true}})
 	}()
 	return c
 }
@@ -66,28 +64,13 @@ func (c *runContext) wait() (*repo.Info, *work.State) {
 	return c.info, c.st
 }
 
-// setenv sets a variable of crux's own environment and returns what puts
-// the old value back.
-func setenv(k, v string) func() {
-	old, had := os.LookupEnv(k)
-	os.Setenv(k, v)
-	return func() {
-		if had {
-			os.Setenv(k, old)
-		} else {
-			os.Unsetenv(k)
-		}
-	}
-}
-
 // markedLines is the report's "in" and "test" lines with the context marks
-// of the symbol in the "in" line: "in internal/group/group.go:multiline
-// [changed]".
+// of their symbols: "in internal/group/group.go:multiline [changed]".
 func markedLines(rs *refs.Resolver, st *work.State) func(*digest.Item) []string {
 	return func(it *digest.Item) []string {
 		ls := rs.Lines(it)
 		for i, l := range ls {
-			if r, ok := strings.CutPrefix(l, "in "); ok {
+			if word, r, ok := strings.Cut(l, " "); ok && (word == "in" || word == "test") {
 				ls[i] = l + work.Suffix(st.Marks(r))
 			}
 		}
@@ -97,31 +80,27 @@ func markedLines(rs *refs.Resolver, st *work.State) func(*digest.Item) []string 
 
 // lastRun is the record of a finished run that seek and recap read: the
 // command, its exit code, the failed tests and the symbols errors and
-// failures are in (a failed test that contains its own failure is only
-// in Tests).
+// failures are in. The store drops duplicates (and a failed test that
+// contains its own failure from In) and caps the lists; this only bounds
+// the lookups.
 func lastRun(argv []string, exit int, r *digest.Report, rs *refs.Resolver) focus.LastRun {
 	lr := focus.LastRun{Cmd: report.Cmd(argv...), Exit: exit}
-	tests, in := map[string]bool{}, []string{}
-	for _, it := range errorsAndFailures(r, maxRecorded) {
-		i, t := rs.Refs(it)
-		if t != "" && !tests[t] && len(lr.Tests) < maxRecorded {
-			tests[t] = true
-			lr.Tests = append(lr.Tests, t)
+	looked := 0
+	add := func(list *[]string, ref string) {
+		if ref != "" {
+			*list = append(*list, ref)
 		}
-		in = append(in, i)
+	}
+	for _, it := range errorsAndFailures(r, maxRecorded) {
+		in, test := rs.Refs(it)
+		add(&lr.Tests, test)
+		add(&lr.In, in)
 		for _, at := range it.Locs { // the other locations of folded errors
-			if len(in) >= 2*maxRecorded {
+			if looked++; looked > 2*maxRecorded {
 				break
 			}
 			at, missing := strings.CutSuffix(at, " (not found)")
-			in = append(in, rs.In(at, missing))
-		}
-	}
-	seen := map[string]bool{}
-	for _, i := range in {
-		if i != "" && !tests[i] && !seen[i] && len(lr.In) < maxRecorded {
-			seen[i] = true
-			lr.In = append(lr.In, i)
+			add(&lr.In, rs.In(at, missing))
 		}
 	}
 	return lr
@@ -156,9 +135,10 @@ func suggest(r *digest.Report, rs *refs.Resolver, st *work.State) (fromContext, 
 		if len(fromContext) >= room || seen[sym] {
 			return
 		}
-		if cmd, change := recap(st, sym); cmd != "" {
+		if cmd, change, mark := recap(st, sym); cmd != "" {
 			seen[sym] = true
-			st.Marks(sym) // the suggestion shows what context knows about sym: the context: line names its layer
+			st.Used(mark) // the context: line names the layer the suggestion rests on
+			st.Use(work.Suggest)
 			fromContext = append(fromContext, report.Next{Cmd: cmd, Why: change + tail})
 		}
 	}
@@ -254,24 +234,24 @@ func candidatesOf(refs []string) []candidate {
 }
 
 // recap returns the recap command that shows what changed in a symbol
-// that context marks, and that change in words; "" when it isn't marked.
-func recap(st *work.State, sym string) (cmd, change string) {
+// that context marks, that change in words, and the mark it rests on; ""
+// when the symbol isn't marked. It only peeks: a suggestion isn't a
+// printed mark.
+func recap(st *work.State, sym string) (cmd, change, mark string) {
 	n := name(sym)
-	switch st.Changes.Mark(sym) {
-	case work.MarkChanged:
-		return report.Cmd("recap", "--show", sym), "the uncommitted change to " + n
-	case work.MarkBranch:
-		if st.Changes.BranchBase != "" {
-			return report.Cmd("recap", "--show", sym, short(st.Changes.BranchBase)), "this branch's change to " + n
+	for _, m := range st.Peek(sym) {
+		switch f := st.Focus; {
+		case m == work.MarkChanged:
+			return report.Cmd("recap", "--show", sym), "the uncommitted change to " + n, m
+		case m == work.MarkBranch && st.Changes.BranchBase != "":
+			return report.Cmd("recap", "--show", sym, short(st.Changes.BranchBase)), "this branch's change to " + n, m
+		case m == work.MarkFocus && f.New != "" && strings.Contains(f.Range, "..") && f.Old != "":
+			return report.Cmd("recap", "--show", sym, short(f.Old)+".."+short(f.New)), "the change to " + n + " in focus " + f.Name(), m
+		case m == work.MarkFocus && f.New != "":
+			return report.Cmd("recap", "show", short(f.New), "--show", sym), "the change to " + n + " in focus " + f.Name(), m
 		}
 	}
-	if f := st.Focus; f.Has(sym) && f.New != "" {
-		if strings.Contains(f.Range, "..") && f.Old != "" {
-			return report.Cmd("recap", "--show", sym, short(f.Old)+".."+short(f.New)), "the change to " + n + " in focus " + f.Range
-		}
-		return report.Cmd("recap", "show", short(f.New), "--show", sym), "the change to " + n + " in focus commit " + short(f.New)
-	}
-	return "", ""
+	return "", "", ""
 }
 
 // name is a symbol ref's qualified name, without path and ordinal.

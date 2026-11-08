@@ -97,7 +97,7 @@ Paths are relative to the repository root. The format is specified in [Prism](ht
 
 In a git repository, crux reads what you're working on without being told: the symbols that changed (uncommitted, or committed on a branch other than the default one) and the commit or range recap last showed (the focus). It's the context seek and recap use too, described in [Prism](https://github.com/Vaspyyy/prism/blob/main/docs/context.md). crux does three things with it:
 
-- **Marks.** An `in` line whose symbol changed gets `[changed]` (uncommitted) or `[branch]` (committed on this branch), and one in the focus gets `[focus]`. A `context:` line at the top says what the marks are based on.
+- **Marks.** An `in` or `test` line whose symbol changed gets `[changed]` (uncommitted) or `[branch]` (committed on this branch), and one in the focus gets `[focus]`. A `context:` line at the top says what the marks are based on.
 - **Suggestions.** Up to three `next:` lines at the bottom, each a command to run as printed. From context: `recap --show <ref>` for a changed symbol that an error or failure is in, a failed test that changed, or a changed symbol whose name appears in the failed test or in the symbol an error is in. Without context: `seek <ref>` for the first failed test's definition.
 - **The last run.** After every run, pass or fail, crux records the command, its exit code, the failed tests and the symbols errors and failures are in, as refs. seek and recap read the record to mark what failed (`[failing]`). It's kept in the repository's git dir (`.git/prism/`), per worktree and agent session, and expires after an hour.
 
@@ -126,7 +126,7 @@ Context never changes which errors, failures or warnings are listed: the `contex
 
 - Paths are relative to the repository root (the text's are relative to the working directory), absolute outside the repository, and as the tool printed them when the file doesn't exist.
 - It lists everything (up to 10,000 entries per list), not only what the budget shows. With an explicit `-b` it lists what the text report would. `truncated` says how much a limit left out.
-- In a git repository, locations carry the context `marks` of the symbol they're in, `context` says what context the run had, and `next` holds the same suggestions as the `next:` lines. With `--no-context`, `context` is `null`.
+- In a git repository, locations carry the context `marks` of the symbol they're in and failed tests their own `test_marks`, `context` says what context the run had (`applied` is `suggest` when only the suggestions came from it), and `next` holds the same suggestions as the `next:` lines. With `--no-context`, `context` is `null`.
 - The exit code is still the command's own, and nothing else is printed, so even stdout and stderr merged are one JSON document. `-v` streams the output to stderr. A command that can't be started gives an `error` with code `failed` (exit 127 or 126), and bad flags, or `-r` with `--json`, give `usage` (exit 2).
 
 ## Recognised tools

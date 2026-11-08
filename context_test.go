@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,10 +13,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Vaspyyy/prism/focus"
 	"github.com/Vaspyyy/prism/repo"
 	"github.com/Vaspyyy/prism/report"
+	"github.com/Vaspyyy/prism/work"
 )
 
 // The context tests run crux in temporary git repositories, with context
@@ -216,9 +219,13 @@ func TestContextAcceptance(t *testing.T) {
 	if f.Loc == nil || f.Loc.In != testRef || f.Loc.Marks != nil || f.Test != testRef {
 		t.Errorf("failure %+v, loc %+v", f, f.Loc)
 	}
-	if d.Context == nil || !reflect.DeepEqual(d.Context.Applied, []string{"mark"}) || d.Context.Changed == nil ||
+	// nothing printed carries a mark: context only gave the suggestion
+	if d.Context == nil || !reflect.DeepEqual(d.Context.Applied, []string{"suggest"}) || d.Context.Changed == nil ||
 		d.Context.Changed.Uncommitted != 1 || d.Context.Focus != nil || d.Context.LastRun != nil {
 		t.Errorf("context %+v", d.Context)
+	}
+	if f.TestMarks != nil {
+		t.Errorf("test marks %q", f.TestMarks)
 	}
 	if len(d.Next) != 2 || d.Next[0].Cmd != "recap --show "+listRef || d.Next[1].Cmd != "seek "+testRef {
 		t.Errorf("next %+v", d.Next)
@@ -248,6 +255,13 @@ func TestContextAcceptance(t *testing.T) {
 	if !strings.Contains(on, "\n    in "+testRef+" [changed]\n") ||
 		!strings.Contains(on, "next: recap --show "+testRef+"   the uncommitted change to TestList, where the failure is\n") {
 		t.Errorf("failure inside a changed test:\n%s", on)
+	}
+	d, c = jsonRun(t, cmd...)
+	if f := find(c.Failures, "TestList"); f.Loc == nil || !reflect.DeepEqual(f.Loc.Marks, []string{"changed"}) || !reflect.DeepEqual(f.TestMarks, []string{"changed"}) {
+		t.Errorf("failure %+v, loc %+v", f, f.Loc)
+	}
+	if !reflect.DeepEqual(d.Context.Applied, []string{"mark", "suggest"}) {
+		t.Errorf("applied %q", d.Context.Applied)
 	}
 
 	// A pass replaces the failure: nothing fails any more.
@@ -282,7 +296,7 @@ func TestContextMarksChangedError(t *testing.T) {
 	if e := find(c.Errors, "undefined: outt"); e.Loc == nil || e.Loc.In != listRef || !reflect.DeepEqual(e.Loc.Marks, []string{"changed"}) {
 		t.Errorf("error %+v", e.Loc)
 	}
-	if d.Context == nil || !reflect.DeepEqual(d.Context.Applied, []string{"mark"}) || len(d.Next) != 1 {
+	if d.Context == nil || !reflect.DeepEqual(d.Context.Applied, []string{"mark", "suggest"}) || len(d.Next) != 1 {
 		t.Errorf("context %+v, next %+v", d.Context, d.Next)
 	}
 }
@@ -551,5 +565,90 @@ func run(q *Queue) []string {
 	}
 	if !strings.HasPrefix(out, "context: 2 changed symbols vs HEAD\n") {
 		t.Errorf("the context: line names the layer the suggestions come from:\n%s", out)
+	}
+}
+
+// The context loads beside the command without git's optional index lock:
+// it leaves crux's environment alone, and a stale index isn't written
+// back (a command writing the index meanwhile would fail on the lock).
+func TestContextLoadTakesNoLocks(t *testing.T) {
+	root := fixture(t)
+	t.Setenv("GIT_OPTIONAL_LOCKS", "1") // locks allowed: what a plain git status does
+	old := time.Now().Add(-time.Hour)   // a stale index: the file's times changed, its content didn't
+	if err := os.Chtimes(filepath.Join(root, filepath.FromSlash(filesPath)), old, old); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(root, ".git", "index")
+	before, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := loadContext(root, work.Changes|work.Focus, false)
+	if v := os.Getenv("GIT_OPTIONAL_LOCKS"); v != "1" {
+		t.Errorf("while loading, GIT_OPTIONAL_LOCKS=%q", v)
+	}
+	_, st := c.wait()
+	if v := os.Getenv("GIT_OPTIONAL_LOCKS"); v != "1" {
+		t.Errorf("after loading, GIT_OPTIONAL_LOCKS=%q", v)
+	}
+	if st.Changes == nil || len(st.Changes.Files) != 0 || st.Store == nil {
+		t.Errorf("changes %+v, store %v", st.Changes, st.Store)
+	}
+	if after, _ := os.ReadFile(index); !bytes.Equal(before, after) {
+		t.Error("loading the context wrote the index")
+	}
+	// a plain git status does write it, so the check above can fail
+	git(t, root, "status", "--porcelain")
+	if after, _ := os.ReadFile(index); bytes.Equal(before, after) {
+		t.Error("git status didn't refresh the stale index; the test checks nothing")
+	}
+}
+
+// A failed test's own marks: on its test line (the assertion is in a
+// helper) and on the in line of a failure without a location, and as
+// test_marks in JSON.
+func TestContextMarksTests(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "internal/files/helper_test.go", `package files
+
+import "testing"
+
+func check(t *testing.T, ok bool) {
+	if !ok {
+		t.Error("not ok")
+	}
+}
+
+func TestHelper(t *testing.T) {
+	check(t, len(List(nil)) == 1)
+}
+`)
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "helper")
+	edit(t, root, "internal/files/helper_test.go", "== 1", "== 2")
+	edit(t, root, testPath, `want := []string{"a", "b", "c"}`, `want := []string{"a", "b", "c", "d"}`)
+	goTest := printed("--- FAIL: TestHelper (0.00s)", "    helper_test.go:7: not ok", "--- FAIL: TestList (0.00s)", "FAIL",
+		"FAIL\texample.com/fixture/internal/files\t0.002s", "FAIL")
+	helperRef := "internal/files/helper_test.go:TestHelper"
+	_, out := text(t, goTest...)
+	if !strings.Contains(out, "\n  TestHelper  internal/files/helper_test.go:7\n    in internal/files/helper_test.go:check\n    test "+helperRef+" [changed]\n") ||
+		!strings.Contains(out, "\n  TestList  internal/files/\n    in "+testRef+" [changed]\n") {
+		t.Errorf("report:\n%s", out)
+	}
+	d, c := jsonRun(t, goTest...)
+	h, l := find(c.Failures, "TestHelper"), find(c.Failures, "TestList")
+	if h.Loc == nil || h.Loc.In != "internal/files/helper_test.go:check" || h.Loc.Marks != nil || h.Test != helperRef ||
+		!reflect.DeepEqual(h.TestMarks, []string{"changed"}) {
+		t.Errorf("TestHelper: %+v, loc %+v", h, h.Loc)
+	}
+	if l.Loc != nil || l.Pkg != "internal/files" || l.Test != testRef || !reflect.DeepEqual(l.TestMarks, []string{"changed"}) {
+		t.Errorf("TestList: %+v", l)
+	}
+	if !reflect.DeepEqual(d.Context.Applied, []string{"mark", "suggest"}) {
+		t.Errorf("applied %q", d.Context.Applied)
+	}
+	_, cOff := jsonRun(t, append([]string{"--no-context"}, goTest...)...)
+	if f := find(cOff.Failures, "TestList"); f.TestMarks != nil {
+		t.Errorf("--no-context test marks %q", f.TestMarks)
 	}
 }
