@@ -196,24 +196,27 @@ func contextNext(r *digest.Report, rs *refs.Resolver, st *work.State, room int) 
 		}
 	}
 	// reference: changed and focus symbols mentioned by name in the symbol
-	// an error is in, or in a failed test
+	// an error or failure is in, and in a failed test (the assertion may be
+	// in a helper, the call under test in either)
 	for _, it := range items {
 		if len(out) >= room {
 			break
 		}
 		in, test := rs.Refs(it)
-		sym := in
-		if test != "" {
-			sym = test
+		syms := []string{in}
+		if test != in {
+			syms = append(syms, test)
 		}
-		if sym == "" {
-			continue
-		}
-		for _, c := range mentioned(sym, rs.Words(sym), cands) {
-			if c.owner == "" {
-				add(c.ref, ", which "+name(sym)+" mentions")
-			} else {
-				add(c.ref, "; "+name(sym)+" mentions "+c.owner+" and "+c.short)
+		for _, sym := range syms {
+			if sym == "" {
+				continue
+			}
+			for _, c := range mentioned(sym, rs.Words(sym), cands) {
+				if c.owner == "" {
+					add(c.ref, ", which "+name(sym)+" mentions")
+				} else {
+					add(c.ref, "; "+name(sym)+" mentions "+c.owner+" and "+c.short)
+				}
 			}
 		}
 	}

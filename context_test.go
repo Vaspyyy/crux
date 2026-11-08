@@ -814,3 +814,33 @@ func TestNoRecordForSignalsAndInterrupts(t *testing.T) {
 		t.Errorf("after an interrupt: exit %d, %+v", code, lr)
 	}
 }
+
+// A failure whose assertion is in a helper: a changed symbol the helper
+// mentions is suggested even when the test itself doesn't name it, and the
+// reason says which one does.
+func TestContextMentionInHelper(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "internal/files/helper_test.go", `package files
+
+import "testing"
+
+func check(t *testing.T, n int) {
+	if len(List(nil)) != n {
+		t.Error("not ok")
+	}
+}
+
+func TestHelper(t *testing.T) {
+	check(t, 1)
+}
+`)
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "helper")
+	edit(t, root, filesPath, "return out\n", "return append(out, \"x\")\n")
+	_, out := text(t, printed("--- FAIL: TestHelper (0.00s)", "    helper_test.go:7: not ok", "FAIL",
+		"FAIL\texample.com/fixture/internal/files\t0.002s", "FAIL")...)
+	want := "next: recap --show " + listRef + "       the uncommitted change to List, which check mentions"
+	if got := nextOf(out); len(got) != 2 || got[0] != want {
+		t.Errorf("next %q, want %q first:\n%s", got, want, out)
+	}
+}
