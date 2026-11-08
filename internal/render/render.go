@@ -27,6 +27,10 @@ type Options struct {
 	Color  bool
 	Budget int // lines of report, roughly
 	Raw    bool
+	// Refs returns the lines that name the symbols an error or failure is
+	// in ("in <ref>", "test <ref>"). It's only called for items the report
+	// shows; nil prints none.
+	Refs func(*digest.Item) []string
 }
 
 // palette, ANSI 16 colors so it follows the terminal theme
@@ -114,7 +118,7 @@ func Report(run Run, r *digest.Report, o Options) string {
 	}
 
 	budget := max(o.Budget, 10)
-	w.items(r, budget, ok)
+	w.items(r, budget, ok, o.Refs)
 
 	if len(r.Notes) > 0 {
 		w.line("\nnotes:")
@@ -248,7 +252,8 @@ func testCounts(r *digest.Report, c pal) string {
 
 // items prints errors, failed tests and warnings within the budget: every
 // error and failure gets its line before any code frame or warning does.
-func (w *report) items(r *digest.Report, budget int, ok bool) {
+// refs (optional) names the symbols each one is in.
+func (w *report) items(r *digest.Report, budget int, ok bool, refs func(*digest.Item) []string) {
 	c := w.c
 	important := append(append([]*digest.Item{}, r.Errors...), r.Failures...)
 	room := budget - w.lines - 4 // header and footer
@@ -263,14 +268,26 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 	room -= sections * 2 // section titles and blank lines
 
 	// The guarantees, whatever the budget: the first error or failure keeps
-	// its explanation, and every error and failure gets a line (beyond
-	// alwaysListed of them, as many as the budget allows). Bodies of the
-	// others and warnings get what's left.
+	// its explanation and the symbol it's in, and every error and failure
+	// gets a line (beyond alwaysListed of them, as many as the budget
+	// allows). The symbols the others are in, then their bodies, then
+	// warnings get what's left.
 	lines := func(it *digest.Item) int { return 1 + locLines(it) }
 	withBody := map[*digest.Item]bool{}
-	if len(important) > 0 && len(important[0].Body) > 0 {
-		withBody[important[0]] = true
-		room -= len(important[0].Body)
+	in := map[*digest.Item][]string{}
+	where := func(it *digest.Item) []string {
+		if refs == nil {
+			return nil
+		}
+		return refs(it)
+	}
+	if len(important) > 0 {
+		if len(important[0].Body) > 0 {
+			withBody[important[0]] = true
+			room -= len(important[0].Body)
+		}
+		in[important[0]] = where(important[0])
+		room -= len(in[important[0]])
 	}
 	shown := 0
 	for _, it := range important {
@@ -279,6 +296,15 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 		}
 		room -= lines(it)
 		shown++
+	}
+	for _, it := range important[min(1, shown):shown] {
+		if room <= 0 {
+			break
+		}
+		if l := where(it); len(l) <= room {
+			in[it] = l
+			room -= len(l)
+		}
 	}
 	for _, it := range important[min(1, shown):shown] {
 		if len(it.Body) > 0 && len(it.Body) <= room {
@@ -342,6 +368,10 @@ func (w *report) items(r *digest.Report, budget int, ok bool) {
 			}
 		}
 		w.line("%s", clip(head))
+		for _, l := range in[it] {
+			word, ref, _ := strings.Cut(l, " ")
+			w.line("    %s%s%s %s%s%s", c.faint, word, c.reset, c.cyan, clip(ref), c.reset)
+		}
 		if withBody[it] {
 			for _, l := range it.Body {
 				w.line("    %s%s%s", c.faint, clip(l), c.reset)

@@ -1,0 +1,36 @@
+   Compiling shapes v0.1.0 (/work/proj/shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (/work/target/debug/deps/shapes-14631470095921c8)
+
+running 3 tests
+test shape::tests::negative ... FAILED
+test tests::adds_wrong ... FAILED
+test tests::returns_err ... FAILED
+
+failures:
+
+---- shape::tests::negative stdout ----
+
+thread 'shape::tests::negative' (3677425) panicked at src/shape.rs:8:13:
+negative radius
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tests::adds_wrong stdout ----
+
+thread 'tests::adds_wrong' (3677426) panicked at src/lib.rs:13:9:
+assertion `left == right` failed
+  left: 4
+ right: 5
+
+---- tests::returns_err stdout ----
+Error: "no shape"
+
+
+failures:
+    shape::tests::negative
+    tests::adds_wrong
+    tests::returns_err
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

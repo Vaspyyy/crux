@@ -331,3 +331,24 @@ func TestFinalRoundRegressions(t *testing.T) {
 		}
 	})
 }
+
+// Failed tests say which runner reported them, and go test failures their
+// package's directory, so their definitions can be found.
+func TestFailuresNameTheirRunner(t *testing.T) {
+	GoModule, GoModuleDir = "example.com/demo", "."
+	defer func() { GoModule, GoModuleDir = "", "" }()
+	for name, want := range map[string]string{
+		"go-test.out":     "TestAdd go test calc, TestDiv go test calc",
+		"go-subtests.out": "TestSame/sub_one go test ",
+		"pytest.out":      "test_add_wrong pytest , test_load_missing pytest , test_dict pytest ",
+		"rust-test.out":   "tests::adds_wrong cargo test , tests::panics cargo test , tests::parses_empty cargo test ",
+	} {
+		var got []string
+		for _, f := range Digest(load(t, name), 1).Failures {
+			got = append(got, f.Title+" "+f.Runner+" "+f.Pkg)
+		}
+		if strings.Join(got, ", ") != want {
+			t.Errorf("%s: got %q, want %q", name, strings.Join(got, ", "), want)
+		}
+	}
+}

@@ -96,7 +96,7 @@ func rustTestFailure(s *state, i int) int {
 		return 0
 	}
 	s.tool("cargo test")
-	it := &Item{Kind: "fail", Title: m[1]}
+	it := &Item{Kind: "fail", Title: m[1], Runner: "cargo test"}
 	end := i + 1
 	for ; end < len(s.lines); end++ {
 		l := s.lines[end]

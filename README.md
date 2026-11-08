@@ -58,13 +58,38 @@ The first line is the verdict, the command, its exit code (or the signal that ki
 
 Errors, failed tests and warnings come next, each with its location. Errors carry the code frame or the frames of a stack trace that are in your code, and failed tests carry the assertion or panic message. When three or more errors are the same (same message, and for Rust the same expected and found types) they're folded into one entry that lists every location, and warnings are folded by kind with every name listed (`unused variable [-Wunused-variable] ×2: ‘unused’, ‘y’`). Tools print paths relative to their own root, so crux looks a location's file up from the current directory, the directories make entered and the parent directories, and rewrites the path so it works from where you are. A location whose file can't be found anywhere is marked, which catches stale caches.
 
+Under each error and failed test, crux names the function, method or type its location is in, as a [ref](#refs) that seek and recap take as is. A failed test also gets its own definition when that's a different symbol, such as a test whose assertion is in a helper:
+
+```
+2 failed tests:
+  TestAdd  calc/calc_test.go:7
+    in calc/calc_test.go:check
+    test calc/calc_test.go:TestAdd
+    got 2, want 3
+  TestNoMessage  calc/
+    in calc/calc_test.go:TestNoMessage
+```
+
+`in` is the innermost definition whose lines contain the location, found with fast per-language rules rather than a compiler, so it says where the line is, not what the code does. A failure without a location gets `in` with the test itself. Go tests are looked up in their package's `_test.go` files, pytest tests by their node ID or traceback header, and cargo tests (`module::tests::name`) only when exactly one function in the crate ends in `tests.name`. Files outside the repository (the standard library, installed packages), lines outside any definition and warnings get no `in` line.
+
 A `notes:` section says when a run did less than it seems to have done: cargo stopping at the first failing test target, a Go test panic (also one in a goroutine) ending the rest of its package, a `-run` filter that matched no test, pytest stopping after a collection error, after `-x` or on Ctrl+C, a package that didn't build.
 
-The budget is soft and has two guarantees: the first error or failed test always keeps its explanation, and every error and failed test gets a line (beyond 30 of them, as many as the budget allows). Code frames of the others and warnings get what's left, and anything cut is announced with a count. Output crux doesn't recognise is shown whole if it's short, or summarised by its error-looking lines and its last lines if it isn't.
+The budget is soft and has two guarantees: the first error or failed test always keeps its explanation and its `in` line, and every error and failed test gets a line (beyond 30 of them, as many as the budget allows). The `in` lines of the others come next, then their code frames and warnings get what's left, and anything cut is announced with a count. Output crux doesn't recognise is shown whole if it's short, or summarised by its error-looking lines and its last lines if it isn't.
 
 The full output is written to `~/.local/state/crux/logs` while the command runs, so it survives a timeout or Ctrl+C. Every run gets its own file (readable only by you), the report ends with its path, and logs are deleted after a week. `crux --log` prints the path of the latest log from the current directory and fails if there isn't one, so `less "$(crux --log)"` never opens the wrong file.
 
 Commands run with `LC_ALL=C.UTF-8` so compiler messages are in English and look the same on every machine. `--keep-locale` turns that off.
+
+## Refs
+
+glint, seek, recap and crux name files, symbols and locations the same way, so anything one of them prints can be handed to another as is:
+
+- `internal/files/files.go`: a file
+- `internal/files/files.go:List`: a symbol, by its qualified name (`Repo.Open` for a method, `outer.inner` for a nested function)
+- `internal/files/files.go:73`: a line (`73:5` with a column, `73-107` a range); tools that take a symbol use the innermost one containing it
+- `main.go:run@b681ef1`: a symbol as it was in a commit; `lib.cpp:parse#2`: the second of two definitions with the same name
+
+Paths are relative to the repository root. The format is specified in [Prism](https://github.com/Vaspyyy/prism/blob/main/docs/refs.md).
 
 ## Recognised tools
 

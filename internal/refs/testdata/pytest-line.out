@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.0.2, pluggy-1.6.0
+PySide6 6.12.0 -- Qt runtime 6.12.0 -- Qt compiled 6.12.0
+rootdir: /work/proj
+plugins: cov-7.1.0, qt-4.5.0, platformdirs-4.13.5
+collected 2 items
+
+tests/test_store.py FF                                                   [100%]
+
+=================================== FAILURES ===================================
+E   assert 3 == 2
+     +  where 3 = count([1, 2])
+/work/proj/tests/test_store.py:5: assert 3 == 2
+E   FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent/x'
+/work/proj/store.py:6: FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent/x'
+=========================== short test summary info ============================
+FAILED tests/test_store.py::test_count - assert 3 == 2
+FAILED tests/test_store.py::TestStore::test_missing - FileNotFoundError: [Err...
+============================== 2 failed in 0.02s ===============================

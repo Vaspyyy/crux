@@ -1,0 +1,9 @@
+--- FAIL: TestAdd (0.00s)
+    calc_test.go:7: got 2, want 3
+--- FAIL: TestDiv (0.00s)
+    --- FAIL: TestDiv/negative (0.00s)
+        calc_test.go:19: Div(-4, 2) = -2, want 2
+--- FAIL: TestNoMessage (0.00s)
+FAIL
+FAIL	example.com/proj/calc	0.002s
+FAIL

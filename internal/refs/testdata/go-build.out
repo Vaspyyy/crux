@@ -1,0 +1,4 @@
+# example.com/proj/broken
+broken/broken.go:3:13: undefined: undefinedLimit
+broken/broken.go:10:28: undefined: y
+broken/broken.go:15:15: q.itemz undefined (type *Queue has no field or method itemz)

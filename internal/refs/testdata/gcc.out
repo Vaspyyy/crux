@@ -1,0 +1,13 @@
+In file included from lib.cpp:1:
+../outside/far.h: In function ‘int far_value()’:
+../outside/far.h:2:12: error: ‘unknown_thing’ was not declared in this scope
+    2 |     return unknown_thing;
+      |            ^~~~~~~~~~~~~
+lib.cpp: In function ‘int parse(const char*)’:
+lib.cpp:8:12: error: ‘undefined_count’ was not declared in this scope
+    8 |     return undefined_count(s);
+      |            ^~~~~~~~~~~~~~~
+lib.cpp: At global scope:
+lib.cpp:11:24: error: ‘missing’ was not declared in this scope
+   11 | int total = parse(1) + missing;
+      |                        ^~~~~~~
