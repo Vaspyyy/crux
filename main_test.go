@@ -60,3 +60,20 @@ func TestHelpColorsOnlyWhenAsked(t *testing.T) {
 		t.Errorf("colored help has no colored section titles:\n%s", colored)
 	}
 }
+
+// The tools agree on -V for the version; -v is crux's --verbose, which
+// needs a command, and says so instead of printing the help.
+func TestVersionAndVerboseWithoutCommand(t *testing.T) {
+	for _, flag := range []string{"-V", "--version"} {
+		if code, out, _ := capture(t, flag); code != 0 || string(out) != "crux "+version+"\n" {
+			t.Errorf("crux %s: exit %d, out %q", flag, code, out)
+		}
+	}
+	code, out, errOut := capture(t, "-v")
+	if want := "crux: -v needs a command: crux -v <command> (the version is crux -V)\n"; code != 2 || len(out) != 0 || errOut != want {
+		t.Errorf("crux -v: exit %d, out %q, err %q, want %q", code, out, errOut, want)
+	}
+	if code, _, errOut := capture(t, "--bogus"); code != 2 || errOut != "crux: unknown flag --bogus (flags go before the command; see crux --help)\n" {
+		t.Errorf("crux --bogus: exit %d, err %q", code, errOut)
+	}
+}

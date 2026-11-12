@@ -25,7 +25,7 @@ import (
 	"github.com/Vaspyyy/crux/internal/runner"
 )
 
-const version = "0.7.1"
+const version = "0.7.2"
 
 type opts struct {
 	budget     int
@@ -61,7 +61,7 @@ func run(args []string) int {
 		case a == "-h" || a == "--help":
 			fmt.Print(helpText(wantsColor(os.Stdout)))
 			return 0
-		case a == "--version":
+		case a == "-V" || a == "--version":
 			fmt.Println("crux", version)
 			return 0
 		case a == "--log":
@@ -115,6 +115,10 @@ func run(args []string) int {
 	if len(argv) == 0 {
 		if o.json {
 			return o.usage("no command given (see crux --help)")
+		}
+		if o.verbose {
+			// -v is the version in some tools; here it streams a command's output
+			return o.usage("-v needs a command: crux -v <command> (the version is crux -V)")
 		}
 		fmt.Fprint(os.Stderr, helpText(wantsColor(os.Stderr)))
 		return 2

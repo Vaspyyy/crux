@@ -40,7 +40,7 @@ var helpSections = []struct {
 	}},
 	{"OTHER", []helpFlag{
 		{"-h", "--help", "", "show this help"},
-		{"", "--version", "", "show the version"},
+		{"-V", "--version", "", "show the version"},
 	}},
 }
 
