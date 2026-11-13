@@ -237,32 +237,76 @@ func pytestSummary(s *state, i int) int {
 
 // pyShortLine reads a line of pytest's short test summary: "FAILED
 // tests/test_x.py::test_p[a b] - assert ...". A parametrization may hold
-// spaces, brackets that don't pair up ("test_p[[]") and " - " itself, so
-// the node id is the text before the first " - " (or the whole line) that
-// can be one: a name without spaces, or one whose parametrization closes
-// at its end.
+// spaces, " - " and brackets, also ones that don't pair up ("test_p[[]"),
+// so the node id ends before the first " - " (or at the end of the line)
+// where a whole node id stands whose brackets pair up; failing that, where
+// one stands at all.
 func pyShortLine(l string) (word, id, msg string, ok bool) {
 	word, rest, _ := strings.Cut(l, " ")
 	if word != "FAILED" && word != "ERROR" {
 		return "", "", "", false
 	}
+	var ends []int
 	for from := 0; ; {
 		i := strings.Index(rest[from:], " - ")
 		if i < 0 {
-			return word, rest, "", pyNodeID(rest)
+			break
 		}
-		if id := rest[:from+i]; pyNodeID(id) {
-			return word, id, rest[from+i+len(" - "):], true
-		}
+		ends = append(ends, from+i)
 		from += i + 1
 	}
+	ends = append(ends, len(rest))
+	for _, paired := range []bool{true, false} {
+		for _, end := range ends {
+			if pyNodeID(rest[:end], paired) {
+				if end < len(rest) {
+					msg = rest[end+len(" - "):]
+				}
+				return word, rest[:end], msg, true
+			}
+		}
+	}
+	return "", "", "", false
 }
 
-// pyNodeID reports whether s can be a whole pytest node id: no spaces
-// before its parametrization, which, if it has one, ends it.
-func pyNodeID(s string) bool {
-	name, _, param := strings.Cut(s, "[")
-	return name != "" && !strings.Contains(name, " ") && (!param || strings.HasSuffix(s, "]"))
+// pyNodeID reports whether s can be a whole pytest node id: a path, and
+// after "::" a test name, neither with spaces, and the name's
+// parametrization, if it has one, at its end; with paired, also one whose
+// brackets pair up. Brackets in the path are part of folder names.
+func pyNodeID(s string, paired bool) bool {
+	path, test, isTest := strings.Cut(s, "::")
+	if path == "" || strings.Contains(path, " ") {
+		return false
+	}
+	if !isTest {
+		return true
+	}
+	name, _, hasParam := strings.Cut(test, "[")
+	if name == "" || strings.Contains(name, " ") {
+		return false
+	}
+	if !hasParam {
+		return true
+	}
+	param := test[len(name):]
+	if !strings.HasSuffix(param, "]") {
+		return false
+	}
+	if !paired {
+		return true
+	}
+	depth := 0
+	for i := range len(param) {
+		switch param[i] {
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth == 0 && i < len(param)-1 {
+				return false // closed before its end
+			}
+		}
+	}
+	return depth == 0
 }
 
 // pyTraceback handles a Python traceback: the exception plus the frame

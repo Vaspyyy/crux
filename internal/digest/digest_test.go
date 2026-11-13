@@ -377,7 +377,10 @@ func TestPytestShortSummary(t *testing.T) {
 		"ERROR tests/test_r.py - ImportError: no module named r",
 		"FAILED tests/test_q.py::test_bad[[] - AssertionError: assert 1 == 2",
 		"FAILED tests/test_q.py::test_dash[a - b] - assert 'a' == 'b'",
-		"========================= 5 failed, 2 passed, 1 error in 0.01s ==========================",
+		"FAILED tests/test_q.py::test_eval[x[0] - y] - assert 1 == 2",
+		"FAILED tests/test_q.py::test_log[[INFO] - hello] - assert 3 == 4",
+		"FAILED tests/[id]/test_s.py::test_s - assert False",
+		"========================= 8 failed, 2 passed, 1 error in 0.01s ==========================",
 	}
 	var got []string
 	r := Digest(lines, 1)
@@ -387,8 +390,10 @@ func TestPytestShortSummary(t *testing.T) {
 	want := []string{
 		"tests/test_q.py::test_sp[a b] | assert False", "tests/test_q.py::test_a | ", "tests/test_q.py::test_n[n[1]-x y] | assert [1] == [2]",
 		"tests/test_q.py::test_bad[[] | AssertionError: assert 1 == 2", "tests/test_q.py::test_dash[a - b] | assert 'a' == 'b'",
+		"tests/test_q.py::test_eval[x[0] - y] | assert 1 == 2", "tests/test_q.py::test_log[[INFO] - hello] | assert 3 == 4",
+		"tests/[id]/test_s.py::test_s | assert False",
 	}
-	if !reflect.DeepEqual(got, want) || r.Tests.Failed != 5 {
+	if !reflect.DeepEqual(got, want) || r.Tests.Failed != 8 {
 		t.Errorf("failures %q, tests %+v", got, r.Tests)
 	}
 	if word, id, msg, ok := pyShortLine("ERROR tests/test_r.py - ImportError: no module named r"); !ok || word != "ERROR" || id != "tests/test_r.py" || msg != "ImportError: no module named r" {
