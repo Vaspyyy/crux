@@ -272,10 +272,11 @@ func pyShortLine(l string) (word, id, msg string, ok bool) {
 // pyNodeID reports whether s can be a whole pytest node id: a path, and
 // after "::" a test name, neither with spaces, and the name's
 // parametrization, if it has one, at its end; with paired, also one whose
-// brackets pair up. Brackets in the path are part of folder names.
+// brackets pair up. Brackets in the path are part of folder names, which
+// may hold spaces between them ("[a b]/test_x.py").
 func pyNodeID(s string, paired bool) bool {
 	path, test, isTest := strings.Cut(s, "::")
-	if path == "" || strings.Contains(path, " ") {
+	if path == "" || spaceOutsideBrackets(path) {
 		return false
 	}
 	if !isTest {
@@ -307,6 +308,24 @@ func pyNodeID(s string, paired bool) bool {
 		}
 	}
 	return depth == 0
+}
+
+// spaceOutsideBrackets reports whether s has a space that no [...] holds.
+func spaceOutsideBrackets(s string) bool {
+	depth := 0
+	for i := range len(s) {
+		switch s[i] {
+		case '[':
+			depth++
+		case ']':
+			depth = max(depth-1, 0)
+		case ' ':
+			if depth == 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // pyTraceback handles a Python traceback: the exception plus the frame

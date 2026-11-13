@@ -380,7 +380,8 @@ func TestPytestShortSummary(t *testing.T) {
 		"FAILED tests/test_q.py::test_eval[x[0] - y] - assert 1 == 2",
 		"FAILED tests/test_q.py::test_log[[INFO] - hello] - assert 3 == 4",
 		"FAILED tests/[id]/test_s.py::test_s - assert False",
-		"========================= 8 failed, 2 passed, 1 error in 0.01s ==========================",
+		"FAILED [a b]/test_t.py::test_t - assert 0",
+		"========================= 9 failed, 2 passed, 1 error in 0.01s ==========================",
 	}
 	var got []string
 	r := Digest(lines, 1)
@@ -391,15 +392,15 @@ func TestPytestShortSummary(t *testing.T) {
 		"tests/test_q.py::test_sp[a b] | assert False", "tests/test_q.py::test_a | ", "tests/test_q.py::test_n[n[1]-x y] | assert [1] == [2]",
 		"tests/test_q.py::test_bad[[] | AssertionError: assert 1 == 2", "tests/test_q.py::test_dash[a - b] | assert 'a' == 'b'",
 		"tests/test_q.py::test_eval[x[0] - y] | assert 1 == 2", "tests/test_q.py::test_log[[INFO] - hello] | assert 3 == 4",
-		"tests/[id]/test_s.py::test_s | assert False",
+		"tests/[id]/test_s.py::test_s | assert False", "[a b]/test_t.py::test_t | assert 0",
 	}
-	if !reflect.DeepEqual(got, want) || r.Tests.Failed != 8 {
+	if !reflect.DeepEqual(got, want) || r.Tests.Failed != 9 {
 		t.Errorf("failures %q, tests %+v", got, r.Tests)
 	}
 	if word, id, msg, ok := pyShortLine("ERROR tests/test_r.py - ImportError: no module named r"); !ok || word != "ERROR" || id != "tests/test_r.py" || msg != "ImportError: no module named r" {
 		t.Errorf("an error's line: %q %q %q %v", word, id, msg, ok)
 	}
-	for _, l := range []string{"FAILED tests/test_q.py::test_a extra", "PASSED tests/test_q.py::test_a", "FAILED ", "FAILED - x", "FAILED tests/test_q.py::test_p[a extra"} {
+	for _, l := range []string{"FAILED tests/test_q.py::test_a extra", "PASSED tests/test_q.py::test_a", "FAILED ", "FAILED - x", "FAILED tests/test_q.py::test_p[a extra", "FAILED my dir/test_m.py::test_m - x"} {
 		if _, _, _, ok := pyShortLine(l); ok {
 			t.Errorf("pyShortLine(%q): ok", l)
 		}
