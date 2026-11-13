@@ -236,33 +236,96 @@ func pytestSummary(s *state, i int) int {
 }
 
 // pyShortLine reads a line of pytest's short test summary: "FAILED
-// tests/test_x.py::test_p[a b] - assert ...". The node id runs to the
-// first space outside brackets, since a parametrization may hold spaces.
+// tests/test_x.py::test_p[a b] - assert ...". A parametrization may hold
+// spaces, " - " and brackets, also ones that don't pair up ("test_p[[]"),
+// so the node id ends before the first " - " (or at the end of the line)
+// where a whole node id stands whose brackets pair up; failing that, where
+// one stands at all.
 func pyShortLine(l string) (word, id, msg string, ok bool) {
 	word, rest, _ := strings.Cut(l, " ")
 	if word != "FAILED" && word != "ERROR" {
 		return "", "", "", false
 	}
-	depth, end := 0, len(rest)
-	for i := 0; i < len(rest) && end == len(rest); i++ {
-		switch rest[i] {
+	var ends []int
+	for from := 0; ; {
+		i := strings.Index(rest[from:], " - ")
+		if i < 0 {
+			break
+		}
+		ends = append(ends, from+i)
+		from += i + 1
+	}
+	ends = append(ends, len(rest))
+	for _, paired := range []bool{true, false} {
+		for _, end := range ends {
+			if pyNodeID(rest[:end], paired) {
+				if end < len(rest) {
+					msg = rest[end+len(" - "):]
+				}
+				return word, rest[:end], msg, true
+			}
+		}
+	}
+	return "", "", "", false
+}
+
+// pyNodeID reports whether s can be a whole pytest node id: a path, and
+// after "::" a test name, neither with spaces, and the name's
+// parametrization, if it has one, at its end; with paired, also one whose
+// brackets pair up. Brackets in the path are part of folder names, which
+// may hold spaces between them ("[a b]/test_x.py").
+func pyNodeID(s string, paired bool) bool {
+	path, test, isTest := strings.Cut(s, "::")
+	if path == "" || spaceOutsideBrackets(path) {
+		return false
+	}
+	if !isTest {
+		return true
+	}
+	name, _, hasParam := strings.Cut(test, "[")
+	if name == "" || strings.Contains(name, " ") {
+		return false
+	}
+	if !hasParam {
+		return true
+	}
+	param := test[len(name):]
+	if !strings.HasSuffix(param, "]") {
+		return false
+	}
+	if !paired {
+		return true
+	}
+	depth := 0
+	for i := range len(param) {
+		switch param[i] {
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth == 0 && i < len(param)-1 {
+				return false // closed before its end
+			}
+		}
+	}
+	return depth == 0
+}
+
+// spaceOutsideBrackets reports whether s has a space that no [...] holds.
+func spaceOutsideBrackets(s string) bool {
+	depth := 0
+	for i := range len(s) {
+		switch s[i] {
 		case '[':
 			depth++
 		case ']':
 			depth = max(depth-1, 0)
 		case ' ':
 			if depth == 0 {
-				end = i
+				return true
 			}
 		}
 	}
-	id, tail := rest[:end], rest[end:]
-	if tail != "" {
-		if msg, ok = strings.CutPrefix(tail, " - "); !ok {
-			return "", "", "", false
-		}
-	}
-	return word, id, msg, id != ""
+	return false
 }
 
 // pyTraceback handles a Python traceback: the exception plus the frame
