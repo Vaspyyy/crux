@@ -236,33 +236,33 @@ func pytestSummary(s *state, i int) int {
 }
 
 // pyShortLine reads a line of pytest's short test summary: "FAILED
-// tests/test_x.py::test_p[a b] - assert ...". The node id runs to the
-// first space outside brackets, since a parametrization may hold spaces.
+// tests/test_x.py::test_p[a b] - assert ...". A parametrization may hold
+// spaces, brackets that don't pair up ("test_p[[]") and " - " itself, so
+// the node id is the text before the first " - " (or the whole line) that
+// can be one: a name without spaces, or one whose parametrization closes
+// at its end.
 func pyShortLine(l string) (word, id, msg string, ok bool) {
 	word, rest, _ := strings.Cut(l, " ")
 	if word != "FAILED" && word != "ERROR" {
 		return "", "", "", false
 	}
-	depth, end := 0, len(rest)
-	for i := 0; i < len(rest) && end == len(rest); i++ {
-		switch rest[i] {
-		case '[':
-			depth++
-		case ']':
-			depth = max(depth-1, 0)
-		case ' ':
-			if depth == 0 {
-				end = i
-			}
+	for from := 0; ; {
+		i := strings.Index(rest[from:], " - ")
+		if i < 0 {
+			return word, rest, "", pyNodeID(rest)
 		}
-	}
-	id, tail := rest[:end], rest[end:]
-	if tail != "" {
-		if msg, ok = strings.CutPrefix(tail, " - "); !ok {
-			return "", "", "", false
+		if id := rest[:from+i]; pyNodeID(id) {
+			return word, id, rest[from+i+len(" - "):], true
 		}
+		from += i + 1
 	}
-	return word, id, msg, id != ""
+}
+
+// pyNodeID reports whether s can be a whole pytest node id: no spaces
+// before its parametrization, which, if it has one, ends it.
+func pyNodeID(s string) bool {
+	name, _, param := strings.Cut(s, "[")
+	return name != "" && !strings.Contains(name, " ") && (!param || strings.HasSuffix(s, "]"))
 }
 
 // pyTraceback handles a Python traceback: the exception plus the frame
